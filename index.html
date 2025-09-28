@@ -1451,7 +1451,19 @@ function saveAppData() {
       savedAt: Date.now()
     };
     
-localStorage.setItem('dnd_inventory_data', JSON.stringify(appData));
+const dataString = JSON.stringify(appData);
+    console.log('Total save data size:', dataString.length, 'characters');
+    
+    // Check if data is too large for localStorage
+    if (dataString.length > 5000000) { // 5MB limit
+      console.warn('Data might be too large for localStorage');
+      // Remove portrait to save space
+      delete appData.portraitSrc;
+      console.log('Removed portrait, new size:', JSON.stringify(appData).length);
+      alert('Image too large for storage - saving without portrait');
+    }
+    
+    localStorage.setItem('dnd_inventory_data', JSON.stringify(appData));
     console.log('App data saved successfully');
     
     // Verify save worked
@@ -1509,9 +1521,22 @@ function loadAppData() {
     
 // Restore portrait
     if (appData.portraitSrc && appData.portraitSrc.startsWith('data:')) {
-      document.getElementById('charImg').src = appData.portraitSrc;
+      console.log('Restoring portrait, data URL length:', appData.portraitSrc.length);
+      console.log('Portrait data starts with:', appData.portraitSrc.substring(0, 50));
+      
+      // Test the saved image before setting it
+      const testImg = new Image();
+      testImg.onload = function() {
+        console.log('Saved portrait validated successfully');
+        document.getElementById('charImg').src = appData.portraitSrc;
+      };
+      testImg.onerror = function() {
+        console.error('Saved portrait is corrupted, using default');
+        document.getElementById('charImg').src = 'assets/Background.png';
+      };
+      testImg.src = appData.portraitSrc;
     } else {
-      // Reset to default if no valid portrait saved
+      console.log('No valid portrait saved, using default');
       document.getElementById('charImg').src = 'assets/Background.png';
     }
     
@@ -1690,14 +1715,38 @@ const charImg  = document.getElementById('charImg');
 const fileInput= document.getElementById('fileInput');
 portrait.addEventListener('click', () => fileInput.click());
 
-// Helper function to convert file to data URL and save
+/// Helper function to convert file to data URL and save
 function handleImageFile(file) {
   if (!file || !file.type.startsWith('image/')) return;
   
+  // Check file size (limit to 1MB to prevent localStorage issues)
+  if (file.size > 1024 * 1024) {
+    alert('Image too large. Please use an image under 1MB.');
+    return;
+  }
+  
   const reader = new FileReader();
   reader.onload = function(e) {
-    charImg.src = e.target.result; // This is a data URL
-    scheduleSave(); // Auto-save after image change
+    const dataUrl = e.target.result;
+    console.log('Image loaded, data URL length:', dataUrl.length);
+    console.log('Data URL starts with:', dataUrl.substring(0, 50));
+    
+    // Test if image loads properly
+    const testImg = new Image();
+    testImg.onload = function() {
+      console.log('Image validated successfully');
+      charImg.src = dataUrl;
+      scheduleSave(); // Auto-save after image change
+    };
+    testImg.onerror = function() {
+      console.error('Image validation failed');
+      alert('Invalid image file');
+    };
+    testImg.src = dataUrl;
+  };
+  reader.onerror = function() {
+    console.error('Failed to read image file');
+    alert('Failed to read image file');
   };
   reader.readAsDataURL(file);
 }
