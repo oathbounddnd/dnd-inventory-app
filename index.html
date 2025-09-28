@@ -1387,6 +1387,14 @@ const ICON_CHAIN = "assets/MarkerChainDiamond01_01_Regular_Red_Loop_400x400.webm
 
 // Save all app data to localStorage
 function saveAppData() {
+console.log('Attempting to save data...');
+    
+    // Check if localStorage is available
+    if (typeof(Storage) === "undefined") {
+      console.error('localStorage not supported');
+      alert('Storage not supported on this device');
+      return;
+    }
   try {
     const appData = {
       // Items data
@@ -1429,8 +1437,17 @@ function saveAppData() {
       savedAt: Date.now()
     };
     
-    localStorage.setItem('dnd_inventory_data', JSON.stringify(appData));
+localStorage.setItem('dnd_inventory_data', JSON.stringify(appData));
     console.log('App data saved successfully');
+    
+    // Verify save worked
+    const verification = localStorage.getItem('dnd_inventory_data');
+    if (verification) {
+      console.log('Save verified - data exists in localStorage');
+    } else {
+      console.error('Save failed - no data found after save attempt');
+      alert('Save failed - localStorage not working');
+    }
   } catch (error) {
     console.error('Failed to save app data:', error);
   }
@@ -1439,8 +1456,13 @@ function saveAppData() {
 // Load all app data from localStorage
 function loadAppData() {
   try {
+    console.log('Attempting to load data...');
     const saved = localStorage.getItem('dnd_inventory_data');
-    if (!saved) return false;
+    console.log('Raw saved data:', saved ? 'Data found' : 'No data found');
+    if (!saved) {
+      console.log('No saved data available');
+      return false;
+    }
     
     const appData = JSON.parse(saved);
     console.log('Loading app data from:', new Date(appData.savedAt));
