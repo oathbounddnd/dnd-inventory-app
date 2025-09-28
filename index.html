@@ -1387,14 +1387,28 @@ const ICON_CHAIN = "assets/MarkerChainDiamond01_01_Regular_Red_Loop_400x400.webm
 
 // Save all app data to localStorage
 function saveAppData() {
-console.log('Attempting to save data...');
-    
-    // Check if localStorage is available
-    if (typeof(Storage) === "undefined") {
-      console.error('localStorage not supported');
-      alert('Storage not supported on this device');
-      return;
-    }
+  console.log('Attempting to save data...');
+  console.log('Is PWA?', window.matchMedia('(display-mode: standalone)').matches);
+  console.log('User agent:', navigator.userAgent);
+  
+  // Check if localStorage is available
+  if (typeof(Storage) === "undefined") {
+    console.error('localStorage not supported');
+    alert('Storage not supported on this device');
+    return;
+  }
+  
+  // Test localStorage write/read
+  try {
+    localStorage.setItem('test_key', 'test_value');
+    const testRead = localStorage.getItem('test_key');
+    console.log('localStorage test:', testRead === 'test_value' ? 'PASSED' : 'FAILED');
+    localStorage.removeItem('test_key');
+  } catch (e) {
+    console.error('localStorage test failed:', e);
+    alert('localStorage not working: ' + e.message);
+    return;
+  }
   try {
     const appData = {
       // Items data
@@ -1570,6 +1584,101 @@ function scheduleSave() {
 function forceSave() {
   clearTimeout(saveTimeout);
   saveAppData();
+}
+
+// Alternative storage using IndexedDB for PWAs
+let useIndexedDB = false;
+
+function initStorage() {
+  // Try localStorage first
+  try {
+    localStorage.setItem('storage_test', 'test');
+    localStorage.removeItem('storage_test');
+    console.log('Using localStorage');
+    return;
+  } catch (e) {
+    console.log('localStorage failed, trying IndexedDB');
+    useIndexedDB = true;
+  }
+  
+  // Setup IndexedDB fallback
+  if ('indexedDB' in window) {
+    setupIndexedDB();
+  } else {
+    alert('No storage available on this device');
+  }
+}
+
+function setupIndexedDB() {
+  const request = indexedDB.open('dnd_inventory_db', 1);
+  
+  request.onupgradeneeded = function(e) {
+    const db = e.target.result;
+    if (!db.objectStoreNames.contains('gameData')) {
+      db.createObjectStore('gameData', { keyPath: 'key' });
+    }
+  };
+  
+  request.onsuccess = function(e) {
+    window.inventoryDB = e.target.result;
+    console.log('IndexedDB ready');
+  };
+  
+  request.onerror = function(e) {
+    console.error('IndexedDB failed:', e);
+    alert('Storage setup failed');
+  };
+}
+
+// Modified save function that uses IndexedDB if needed
+async function saveAppDataAlt() {
+  if (!useIndexedDB) {
+    return saveAppData();
+  }
+  
+  // Use IndexedDB
+  if (!window.inventoryDB) {
+    console.error('IndexedDB not ready');
+    return;
+  }
+  
+  const appData = {
+    items: Array.from(items.entries()).map(([id, obj]) => ({
+      id,
+      data: obj.data,
+      parentSelector: getElementSelector(obj.el.parentElement)
+    })),
+    idCounter,
+    coins: {
+      gold: document.getElementById('gold').value,
+      silver: document.getElementById('silver').value,
+      copper: document.getElementById('copper').value
+    },
+    survival: {
+      waterLevel,
+      rationsDays,
+      rationsStock
+    },
+    spells: Array.from(spells.entries()).map(([id, spell]) => ({
+      id,
+      data: spell.data
+    })),
+    spellIdCounter,
+    portraitSrc: document.getElementById('charImg').src !== 'assets/Background.png' ? 
+                 document.getElementById('charImg').src : null,
+    quiverCount: parseInt(document.getElementById('quiverCount').textContent) || 0,
+    savedAt: Date.now()
+  };
+  
+  const transaction = window.inventoryDB.transaction(['gameData'], 'readwrite');
+  const store = transaction.objectStore('gameData');
+  
+  try {
+    await store.put({ key: 'dnd_inventory_data', data: appData });
+    console.log('Data saved to IndexedDB');
+  } catch (e) {
+    console.error('IndexedDB save failed:', e);
+  }
 }
 
 /* Portrait image picker / drop */
@@ -2353,12 +2462,17 @@ document.addEventListener('touchend', e => {
   }
 }, {passive: true});
 
-// Initialize survival indicators and load saved data
-if (!loadAppData()) {
-  // If no saved data, use defaults
-  updateWaterDisplay();
-  updateRationsDisplay();
-}
+// Initialize storage and load saved data
+initStorage();
+
+// Wait a moment for storage to initialize, then load
+setTimeout(() => {
+  if (!loadAppData()) {
+    // If no saved data, use defaults
+    updateWaterDisplay();
+    updateRationsDisplay();
+  }
+}, 100);
 
 // Save data when page is about to unload
 window.addEventListener('beforeunload', forceSave);
