@@ -1440,8 +1440,8 @@ function saveAppData() {
       })),
       spellIdCounter,
       
-      // Portrait image (as data URL if custom)
-      portraitSrc: document.getElementById('charImg').src !== 'assets/Background.png' ? 
+// Portrait image (as data URL if custom)
+      portraitSrc: document.getElementById('charImg').src.startsWith('data:') ? 
                    document.getElementById('charImg').src : null,
       
       // Quiver count
@@ -1507,9 +1507,12 @@ function loadAppData() {
       updateRationsDisplay();
     }
     
-    // Restore portrait
-    if (appData.portraitSrc) {
+// Restore portrait
+    if (appData.portraitSrc && appData.portraitSrc.startsWith('data:')) {
       document.getElementById('charImg').src = appData.portraitSrc;
+    } else {
+      // Reset to default if no valid portrait saved
+      document.getElementById('charImg').src = 'assets/Background.png';
     }
     
     // Restore items
@@ -1686,9 +1689,28 @@ const portrait = document.getElementById('portrait');
 const charImg  = document.getElementById('charImg');
 const fileInput= document.getElementById('fileInput');
 portrait.addEventListener('click', () => fileInput.click());
+
+// Helper function to convert file to data URL and save
+function handleImageFile(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    charImg.src = e.target.result; // This is a data URL
+    scheduleSave(); // Auto-save after image change
+  };
+  reader.readAsDataURL(file);
+}
+
 fileInput.addEventListener('change', e => {
-  const f = e.target.files?.[0]; if(!f) return;
-  charImg.src = URL.createObjectURL(f);
+  const f = e.target.files?.[0]; 
+  if (f) handleImageFile(f);
+});
+
+['dragover','drop'].forEach(evt => portrait.addEventListener(evt, e => e.preventDefault()));
+portrait.addEventListener('drop', e => {
+  const f = e.dataTransfer.files?.[0]; 
+  if (f) handleImageFile(f);
 });
 ['dragover','drop'].forEach(evt => portrait.addEventListener(evt, e => e.preventDefault()));
 portrait.addEventListener('drop', e => {
