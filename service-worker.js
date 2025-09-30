@@ -1,17 +1,25 @@
 // service-worker.js — safe install for GitHub Pages project site
 
 // IMPORTANT: This file must live at /dnd-inventory-app/service-worker.js for scope to match your pages site.
-const CACHE_NAME = 'dnd-inventory-cache-v2';
+const CACHE_NAME = 'dnd-inventory-cache-v3';
+
+// Dynamically determine base path
+const getBasePath = () => {
+  if (self.location.hostname.includes('github.io')) {
+    const pathParts = self.location.pathname.split('/').filter(p => p);
+    return pathParts.length > 0 ? `/${pathParts[0]}` : '';
+  }
+  return '';
+};
+
+const BASE = getBasePath();
 
 // Only list URLs you know exist in the deployed site.
-// Add more assets if you want, but 404s will be skipped safely.
 const PRECACHE_URLS = [
-  '/dnd-inventory-app/',                // root of the project site
-  '/dnd-inventory-app/index.html',
-  '/dnd-inventory-app/assets/Background.png',
-  // Tip: add other assets here once you verify their URLs on GH Pages, e.g.:
-  // '/dnd-inventory-app/assets/WaterDrop.png',
-  // '/dnd-inventory-app/assets/Rations.png'
+  `${BASE}/`,
+  `${BASE}/index.html`,
+  `${BASE}/manifest.webmanifest`,
+  `${BASE}/assets/Background.png`
 ];
 
 self.addEventListener('install', (event) => {
