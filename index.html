@@ -40,6 +40,8 @@ body {
 }
 /* ======== THEME VARS ======== */
 :root{
+  --spell-row-min-h: 72px; /* min height per spell row for 2-visible-rows calc */
+
   --topbar-h: 30px;
 
 /* Portrait (borderless) */
@@ -912,9 +914,9 @@ textarea{ min-height: 80px; resize: vertical; }
   grid-auto-rows: minmax(220px, auto);
 }
 
-/* Give the section itself a minimum height so .spell-list (flex:1) has space */
+/* Give the section enough height to show 2 rows + header/gaps */
 .spell-section {
-  min-height: 220px;
+  min-height: calc(var(--spell-row-min-h) * 2 + 56px);
 }
 
 /* Make the inner list scroll nicely on iOS and allow vertical panning */
@@ -927,9 +929,10 @@ textarea{ min-height: 80px; resize: vertical; }
 /* Small screens: a touch more height so 2–3 items are visible */
 @media (max-width: 480px) {
   .spell-section {
-    min-height: 260px;
+    min-height: calc(var(--spell-row-min-h) * 2 + 64px);
   }
 }
+
 
 
 .spell-section {
@@ -974,26 +977,30 @@ textarea{ min-height: 80px; resize: vertical; }
 
 .spell-list {
   flex: 1;
-  min-height: 100px; /* Ensures at least 2-3 spells visible before scrolling */
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
+
 .spell-item {
   background: rgba(0,0,0,0.4);
   border: 1px solid #555;
   border-radius: 4px;
-  padding: 6px 40px 6px 6px; /* Extra padding on right for indicators */
+  padding: 6px 40px 6px 8px; /* keep space for indicators */
   cursor: pointer;
   position: relative;
-  font-size: 10px;
-  line-height: 1.2;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  line-height: 1.25;
+  display: grid;
+  grid-template-columns: minmax(96px, 36%) 1fr; /* name | description */
+  gap: 8px 10px;
+  align-items: start;
+  min-height: var(--spell-row-min-h);
 }
+
 
 .spell-item:hover {
   background: rgba(0,0,0,0.6);
@@ -1003,18 +1010,28 @@ textarea{ min-height: 80px; resize: vertical; }
 .spell-name {
   font-weight: 600;
   white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.spell-description-preview {
-  font-size: 7px;
-  opacity: 0.7;
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex: 1;
-  margin-left: 4px;
 }
+
+
+.spell-description-preview {
+  /* Dynamic size: smaller on narrow screens, readable on wide */
+  font-size: clamp(9px, 2.6vw, 12px);
+  opacity: 0.85;
+  white-space: normal;         /* allow wrapping */
+  overflow-wrap: anywhere;     /* break long words if needed */
+  margin-left: 0;
+  align-self: start;
+}
+
+@media (max-width: 360px) {
+  .spell-item {
+    grid-template-columns: minmax(88px, 40%) 1fr;
+  }
+}
+
+
 
 .spell-indicators {
   position: absolute;
@@ -1889,6 +1906,15 @@ document.getElementById('saveBtn').addEventListener('click', () => {
   btn.style.background = '#4caf50';
   setTimeout(() => btn.style.background = original, 200);
 });
+
+/* Spellbook: collapsible categories */
+document.addEventListener('click', (e) => {
+  const h3 = e.target.closest('.spell-section > h3');
+  if (!h3) return;
+  const section = h3.parentElement;
+  section.classList.toggle('collapsed');
+});
+
 
 function filterItems(query) {
   document.querySelectorAll('.item').forEach(item => {
