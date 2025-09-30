@@ -8,9 +8,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
-<!-- Manifest causes a CORS warning when opened via file://
-     It will work fine when served over http/https. -->
-<!-- <link rel="manifest" href="manifest.webmanifest"> -->
+<!-- Web App Manifest (required for install) -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#151616">
+
 
 <style>
 /* ======== NO PAGE SCROLL + DRAG-SAFE BASE ======== */
@@ -1082,6 +1083,7 @@ textarea{ min-height: 80px; resize: vertical; }
       <input type="text" id="searchBox" placeholder="Search items..." style="display:none; width: 120px; font-size: 10px; padding: 4px; border-radius: 4px; background: var(--slot-bg); color: var(--text); border: var(--slot-border);">
       <button class="btn-plus" id="searchBtn" aria-label="Search Items" style="width: 24px; height: 24px; font-size: 14px;">🔍</button>
 <button class="btn-plus" id="saveBtn" aria-label="Save Data" style="width: 24px; height: 24px; font-size: 12px;" title="Manual Save">💾</button>
+<button class="btn-plus" id="installBtn" aria-label="Install App" title="Install App" style="width: 28px; height: 28px; font-size: 14px; display:none;">⬇️</button>
 <button class="btn-plus" id="openSpellbookBtn" aria-label="Open Spellbook" title="Open Spellbook" style="width: 28px; height: 28px; font-size: 14px;">📖</button>
 
     </div>
@@ -1478,6 +1480,34 @@ textarea{ min-height: 80px; resize: vertical; }
 
 <script>
 // <dialog> fallback (older Safari)
+// === PWA Install wiring ===
+let deferredInstallPrompt = null;
+const installBtn = document.getElementById('installBtn');
+
+// Only show the button when browser says we're installable
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault(); // prevent auto mini-infobar
+  deferredInstallPrompt = e;
+  if (installBtn) installBtn.style.display = 'inline-grid';
+});
+
+// Handle click to trigger prompt
+installBtn?.addEventListener('click', async () => {
+  if (!deferredInstallPrompt) return;
+  installBtn.style.display = 'none';
+  deferredInstallPrompt.prompt();
+  try {
+    await deferredInstallPrompt.userChoice; // { outcome: 'accepted' | 'dismissed', platform: ... }
+  } catch (_) {}
+  deferredInstallPrompt = null;
+});
+
+// Hide the button once installed
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  if (installBtn) installBtn.style.display = 'none';
+});
+
 if (!('HTMLDialogElement' in window) || !('showModal' in HTMLDialogElement.prototype)) {
   document.querySelectorAll('dialog').forEach((dlg) => {
     dlg.showModal = function(){ this.setAttribute('open',''); };
@@ -3549,17 +3579,16 @@ if ('serviceWorker' in navigator) {
   const inGhPagesScope = location.pathname.startsWith('/dnd-inventory-app/');
 
   if (isHttps && inGhPagesScope) {
-    // Register with explicit scope that matches the project site
     navigator.serviceWorker.register('/dnd-inventory-app/service-worker.js', { scope: '/dnd-inventory-app/' })
       .then(reg => console.log('SW registered with scope', reg.scope))
       .catch(err => console.log('SW failed:', err));
   } else if (isLocalhost) {
-    // Local dev (optional): you can register a local SW here if you want
     console.log('SW: dev/local environment detected; skipping registration.');
   } else {
     console.log('SW not registered on this origin/path:', location.origin + location.pathname);
   }
 }
+
 
 
 
