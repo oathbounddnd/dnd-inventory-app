@@ -1,38 +1,72 @@
-/* Simple cache-first service worker */
-const CACHE = "inv-v1";
-const CORE = ["./", "./index.html", "./assets/Background.png", "./assets/mask4.webp"];
+// service-worker.js — safe install + basic cache-first fetch
 
-self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(CORE)));
-  self.skipWaiting();
-});
+const CACHE_NAME = 'dnd-inventory-cache-v1';
 
-self.addEventListener("activate", (e) => {
-  e.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
-    )
-  );
-  self.clients.claim();
-});
+// Keep this list minimal and correct. Add more files as needed.
+const PRECACHE_URLS = [
+  './',
+  './index.html',
+  './assets/Background.png'
+];
 
-self.addEventListener("fetch", (e) => {
-  const req = e.request;
-  const url = new URL(req.url);
-
-  // Only same-origin GETs
-  if (req.method !== "GET" || url.origin !== location.origin) return;
-
-  e.respondWith(
-    caches.match(req).then((hit) => {
-      if (hit) return hit;
-      return fetch(req)
-        .then((resp) => {
-          const copy = resp.clone();
-          caches.open(CACHE).then((c) => c.put(req, copy));
-          return resp;
+self.addEventListener('install', (event) => {
+  event.waitUntil((async () => {
+    try {
+      const cache = await caches.open(CACHE_NAME);
+      // Attempt each request individually so a single failure won't abort install
+      await Promise.all(
+        PRECACHE_URLS.map(async (url) => {
+          try {
+            const resp = await fetch(url, { cache: 'no-store' });
+            if (!resp.ok) throw new Error(`Bad response for ${url}: ${resp.status}`);
+            await cache.put(url, resp.clone());
+          } catch (err) {
+            // Log and continue
+            console.warn('[SW] Skipping precache URL due to error:', url, err.message);
+          }
         })
-        .catch(() => caches.match("./"));
-    })
-  );
+      );
+    } catch (e) {
+      console.warn('[SW] Install encountered an error but will continue:', e.message);
+    }
+    // Activate new SW immediately on install
+    self.skipWaiting();
+  })());
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    // Optionally clean old caches here
+    const keys = await caches.keys();
+    await Promise.all(
+      keys
+        .filter((k) => k !== CACHE_NAME)
+        .map((k) => caches.delete(k))
+    );
+    self.clients.claim();
+  })());
+});
+
+// Basic cache-first strategy for GET requests
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
+  if (req.method !== 'GET') return;
+
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    const cached = await cache.match(req, { ignoreSearch: true });
+    if (cached) return cached;
+
+    try {
+      const fresh = await fetch(req);
+      // Only cache successful, same-origin responses
+      if (fresh.ok && new URL(req.url).origin === self.location.origin) {
+        cache.put(req, fresh.clone());
+      }
+      return fresh;
+    } catch (e) {
+      // Optional: return a fallback response here if desired
+      return cached || Response.error();
+    }
+  })());
 });
