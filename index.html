@@ -2626,6 +2626,25 @@ document.getElementById('rationsIndicator').addEventListener('click', () => {
   rationsDialog.showModal();
 });
 
+// ==== Spellbook navigation (open from indicator; back button returns) ====
+const spellbookPage = document.getElementById('spellbookPage');
+const inventoryScreen = document.querySelector('main.screen');
+
+document.getElementById('spellbookIndicator').addEventListener('click', () => {
+  // Show spellbook UI
+  spellbookPage.style.display = 'block';
+  // Hide inventory UI
+  inventoryScreen.style.display = 'none';
+});
+
+document.getElementById('backToInventoryBtn').addEventListener('click', () => {
+  // Hide spellbook UI
+  spellbookPage.style.display = 'none';
+  // Show inventory UI
+  inventoryScreen.style.display = '';
+});
+
+
 document.getElementById('eatRationsBtn').addEventListener('click', () => {
   if (rationsDays >= 1.0) {
     rationsDays = Math.max(0, rationsDays - 1.0);
