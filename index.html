@@ -1487,6 +1487,14 @@ if (!('HTMLDialogElement' in window) || !('showModal' in HTMLDialogElement.proto
   });
 }
 
+<script>
+// === SINGLETON SPELL STATE (avoid duplicate declarations) ===
+window.spells = (window.spells instanceof Map) ? window.spells : new Map();
+window.spellIdCounter = (typeof window.spellIdCounter === 'number') ? window.spellIdCounter : 1;
+window.editingSpellId = (typeof window.editingSpellId !== 'undefined') ? window.editingSpellId : null;
+</script>
+
+
 /* ---------- ICON PATHS ---------- */
 const ICON_RUNE  = "assets/Rune02Loop_01_04_Regular_Purple_400x400.webm";
 const ICON_CHAIN = "assets/MarkerChainDiamond01_01_Regular_Red_Loop_400x400.webm";
@@ -1871,11 +1879,7 @@ portrait.addEventListener('drop', e => {
   const f = e.dataTransfer.files?.[0]; 
   if (f) handleImageFile(f);
 });
-['dragover','drop'].forEach(evt => portrait.addEventListener(evt, e => e.preventDefault()));
-portrait.addEventListener('drop', e => {
-  const f = e.dataTransfer.files?.[0]; if(!f || !f.type.startsWith('image/')) return;
-  charImg.src = URL.createObjectURL(f);
-});
+
 
 /* Coins */
 ['gold','silver','copper'].forEach(id => {
@@ -2049,25 +2053,7 @@ document.addEventListener('click', function(e) {
     var id = listIdForLevel(level);
     return document.getElementById(id);
   }
-  function createSpellElement(spellData, id){
-    var el = document.createElement('div');
-    el.className = 'spell-item';
-    el.dataset.id = id;
-    // render (uses updateSpellElement you already have)
-    if (typeof updateSpellElement === 'function') {
-      updateSpellElement(el, spellData);
-    } else {
-      // minimal fallback (name only)
-      el.textContent = spellData.name || 'Spell';
-    }
-    // click-to-edit (but NOT when clicking the Show text button)
-    el.addEventListener('click', function(ev){
-      var t = ev.target;
-      if (t && t.closest && t.closest('.spell-show-btn')) return; // do not open edit on button
-      openEditSpell(id);
-    });
-    return el;
-  }
+
   function mountOrMoveSpellElement(id, spellData){
     var list = findSpellList(spellData.level);
     if (!list) return;
@@ -2178,17 +2164,6 @@ document.addEventListener('click', function(e) {
   }
 })();
 
-
-
-// Give headers button semantics once at startup (plain JS)
-(function initSpellHeaders(){
-  var headers = document.querySelectorAll('.spell-section > h3');
-  for (var i = 0; i < headers.length; i++) {
-    headers[i].setAttribute('role', 'button');
-    headers[i].setAttribute('tabindex', '0');
-    headers[i].setAttribute('aria-expanded', 'true');
-  }
-})();
 
 
 
@@ -2937,41 +2912,6 @@ document.addEventListener('visibilitychange', () => {
   }
 });;
 
-/* Spellbook Management */
-let editingSpellId = null;
-let spellIdCounter = 1;
-const spells = new Map();
-
-// Show spellbook page
-document.getElementById('spellbookIndicator').addEventListener('click', () => {
-  document.querySelector('.screen').style.display = 'none';
-  document.getElementById('spellbookPage').style.display = 'block';
-});
-
-
-// Back to inventory
-document.getElementById('backToInventoryBtn').addEventListener('click', () => {
-  document.querySelector('.screen').style.display = 'flex';
-  document.getElementById('spellbookPage').style.display = 'none';
-});
-
-// Spell dialog management
-const spellDialog = document.getElementById('spellDialog');
-const spellForm = document.getElementById('spellForm');
-
-document.getElementById('addSpellBtn').addEventListener('click', () => openAddSpellDialog());
-document.getElementById('cancelSpellBtn').addEventListener('click', () => spellDialog.close());
-document.getElementById('deleteSpellBtn').addEventListener('click', () => {
-  if(!editingSpellId) return;
-  const spell = spells.get(editingSpellId);
-  if(spell) {
-    spell.element.remove();
-    spells.delete(editingSpellId);
-    scheduleSave(); // Auto-save spell deletion
-  }
-  spellDialog.close();
-});
-
 
 // Auto-fill spell data from D&D APIs
 document.getElementById('autoFillBtn').addEventListener('click', async () => {
@@ -3216,199 +3156,130 @@ function levenshtein(a, b) {
 
 /* Split text file into individual spells (supports markers or legacy format) */
 function splitIntoSpells(textContent) {
-  const txt = (textContent || '').replace(/\r/g, '');
+const txt = (textContent || '').replace(/\r/g, '');
 
-  // Preferred: explicit markers
-  if (txt.includes('=== SPELL START ===') && txt.includes('=== SPELL END ===')) {
-    const out = [];
-    const re = /=== SPELL START ===([\s\S]*?)=== SPELL END ===/g;
-    let m;
-    while ((m = re.exec(txt)) !== null) {
-      const block = m[1].trim();
-      if (block) out.push(block);
-    }
-    if (out.length) return out;
-  }
-
-  // Fallback: name line followed by "Casting Time:" line
-  const spells = [];
-  const lines = txt.split('\n');
-  let cur = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = (lines[i] || '').trim();
-    if (line && i + 1 < lines.length) {
-      const next = (lines[i + 1] || '').trim();
-      if (/^Casting\s+Time:/i.test(next)) {
-        if (cur.length) spells.push(cur.join('\n'));
-        cur = [line];
-        continue;
-      }
-    }
-    if (cur.length) cur.push(lines[i]);
-  }
-  if (cur.length) spells.push(cur.join('\n'));
-  return spells;
+// Preferred: explicit markers
+if (txt.includes('=== SPELL START ===') && txt.includes('=== SPELL END ===')) {
+const out = [];
+const re = /=== SPELL START ===([\s\S]*?)=== SPELL END ===/g;
+let m;
+while ((m = re.exec(txt)) !== null) {
+const block = m[1].trim();
+if (block) out.push(block);
+}
+if (out.length) return out;
 }
 
+// Fallback: header line followed by a "Casting Time:" line
+const spells = [];
+const lines = txt.split('\n');
+let cur = [];
 
-  // MODE B: Legacy heuristic (no markers)
-  const spells = [];
-  let cur = [];
-
-  const looksLikeHeader = (i) => {
-    const line = (lines[i] || '').trim();
-    const next = (lines[i + 1] || '').trim();
-    if (!line) return false;
-    if (/^casting\s*time\s*:/i.test(next)) return true; // e.g., "Casting Time:"
-    if (/^[A-Z0-9][A-Z0-9' \-()]+$/.test(line) && next.length < 64) return true;
-    return false;
-  };
-
-  for (let i = 0; i < lines.length; i++) {
-    if (looksLikeHeader(i)) {
-      if (cur.length) spells.push(cur.join('\n'));
-      cur = [lines[i]];
-      continue;
-    }
-    if (cur.length) cur.push(lines[i]);
-  }
-  if (cur.length) spells.push(cur.join('\n'));
-  return spells;
+for (let i = 0; i < lines.length; i++) {
+const line = (lines[i] || '').trim();
+if (line && i + 1 < lines.length) {
+const next = (lines[i + 1] || '').trim();
+if (/^Casting\s+Time:/i.test(next)) {
+if (cur.length) spells.push(cur.join('\n'));
+cur = [line];
+continue;
+}
+}
+if (cur.length) cur.push(lines[i]);
+}
+if (cur.length) spells.push(cur.join('\n'));
+return spells;
 }
 
 
 
 /* Parse a single spell block (prefers explicit fields like "Name:", supports legacy too) */
 function parseSpellBlock(spellBlock) {
-  const block = (spellBlock || '').replace(/\r/g, '');
+const block = (spellBlock || '').replace(/\r/g, '');
 
-  // Try explicit fields first
-  const get = (label) => {
-    const m = block.match(new RegExp(`(^|\\n)\\s*${label}\\s*:\\s*([^\\n]+)`, 'i'));
-    return m ? m[2].trim() : '';
-  };
+// Try explicit fields first
+const get = (label) => {
+const m = block.match(new RegExp((^|\\n)\\s*${label}\\s*:\\s*([^\\n]+), 'i'));
+return m ? m[2].trim() : '';
+};
 
-  let name = get('Name');
-  let level = get('Level');
-  let school = get('School');
-  let castingTime = get('Casting\\s*Time') || get('CastingTime') || '';
-  let range = get('Range');
-  let components = get('Components');
-  let duration = get('Duration');
+let name = get('Name');
+let level = get('Level');
+let school = get('School');
+let castingTime = get('Casting\s*Time') || get('CastingTime') || '';
+let range = get('Range');
+let components = get('Components');
+let duration = get('Duration');
 
-  // Description: either "Description:" label or everything after Duration line
-  let description = '';
-  const descLabel = block.match(/(^|\n)\s*Description\s*:\s*([\s\S]*)$/i);
-  if (descLabel) {
-    description = descLabel[2].trim();
-  } else {
-    const dIdx = block.search(/(^|\n)\s*Duration\s*:\s*[^\n]+/i);
-    if (dIdx > -1) {
-      const after = block.slice(dIdx);
-      const nl = after.indexOf('\n');
-      description = nl > -1 ? after.slice(nl + 1).trim() : '';
-    }
-  }
-
-  // If explicit fields missing, fall back to legacy header parsing
-  if (!name) {
-    const lines = block.split('\n');
-    name = (lines[0] || '').trim() || 'Unknown';
-    if (!castingTime) {
-      const ct = block.match(/(^|\n)\s*Casting\s+Time\s*:\s*([^\n]+)/i);
-      castingTime = ct ? ct[2].trim() : '';
-    }
-    if (!range) {
-      const rm = block.match(/(^|\n)\s*Range\s*:\s*([^\n]+)/i);
-      range = rm ? rm[2].trim() : '';
-    }
-    if (!components) {
-      const cm = block.match(/(^|\n)\s*Components\s*:\s*([^\n]+)/i);
-      components = cm ? cm[2].trim() : '';
-    }
-    if (!duration) {
-      const dm = block.match(/(^|\n)\s*Duration\s*:\s*([^\n]+)/i);
-      duration = dm ? dm[2].trim() : '';
-    }
-    if (!description) {
-      // everything after Duration line (if any)
-      const dm = block.match(/(^|\n)\s*Duration\s*:\s*[^\n]+([\s\S]*)$/i);
-      description = dm ? dm[2].trim() : '';
-    }
-  }
-
-  // Normalize level
-  let levelOut = '1';
-  if (/cantrip/i.test(level)) levelOut = 'cantrip';
-  else {
-    const lm = (level || '').match(/\b(\d+)\b/);
-    if (lm) levelOut = String(parseInt(lm[1], 10));
-    else if (/cantrip/i.test(block)) levelOut = 'cantrip';
-  }
-
-  // Find school if empty
-  if (!school) {
-    const sm = block.match(/\b(abjuration|conjuration|divination|enchantment|evocation|illusion|necromancy|transmutation)\b/i);
-    if (sm) school = sm[1];
-  }
-
-  const concentration = /concentration/i.test(duration || '');
-
-  return {
-    name: name,
-    level: levelOut,
-    school: school || '',
-    castingTime: castingTime || '1 action',
-    range: range || 'Touch',
-    components: components || 'V, S',
-    duration: duration || 'Instantaneous',
-    concentration,
-    description: (description || '').replace(/"[^"]*"$/s, '').trim()
-  };
+// Description: either "Description:" label or everything after Duration line
+let description = '';
+const descLabel = block.match(/(^|\n)\sDescription\s:\s*([\s\S])$/i);
+if (descLabel) {
+description = descLabel[2].trim();
+} else {
+const dIdx = block.search(/(^|\n)\sDuration\s*:\s*[^\n]+/i);
+if (dIdx > -1) {
+const after = block.slice(dIdx);
+const nl = after.indexOf('\n');
+description = nl > -1 ? after.slice(nl + 1).trim() : '';
+}
 }
 
-  // MODE B: Legacy heuristic parsing
-  const name = (lines[0] || '').trim();
-
-  const castingTime = pick(/Casting\s*Time\s*:\s*([^\n]+)/i) || '1 action';
-  const range       = pick(/Range\s*:\s*([^\n]+)/i) || '';
-  const components  = pick(/Components\s*:\s*([^\n]+)/i) || '';
-  const duration    = pick(/Duration\s*:\s*([^\n]+)/i) || '';
-
-  let description = '';
-  const durIdx = block.search(/Duration\s*:\s*[^\n]+/i);
-  if (durIdx >= 0) {
-    const rest = block.slice(durIdx).split('\n');
-    rest.shift();
-    description = rest.join('\n').trim();
-  }
-  description = description.replace(/"[^"]*"$/s, '').trim();
-
-  const headerSpan = lines.slice(0, 8).join(' ');
-  let level = '1';
-  let school = '';
-
-  const mLvl = headerSpan.match(/(\d+)(?:st|nd|rd|th)[\s-]*level/i);
-  if (mLvl) level = mLvl[1];
-  if (/cantrip/i.test(headerSpan)) level = 'cantrip';
-  const mSch = headerSpan.match(/\b(abjuration|conjuration|divination|enchantment|evocation|illusion|necromancy|transmutation)\b/i);
-  if (mSch) school = mSch[1];
-
-  const concentration = /concentration/i.test(duration);
-
-  return {
-    name: name || 'Spell',
-    level,
-    school,
-    castingTime,
-    range,
-    components,
-    duration,
-    concentration,
-    description
-  };
+// If explicit fields missing, fall back to legacy cues
+if (!name) {
+const lines = block.split('\n');
+name = (lines[0] || '').trim() || 'Unknown';
+if (!castingTime) {
+const ct = block.match(/(^|\n)\sCasting\s+Time\s:\s*([^\n]+)/i);
+castingTime = ct ? ct[2].trim() : '';
 }
+if (!range) {
+const rm = block.match(/(^|\n)\sRange\s:\s*([^\n]+)/i);
+range = rm ? rm[2].trim() : '';
+}
+if (!components) {
+const cm = block.match(/(^|\n)\sComponents\s:\s*([^\n]+)/i);
+components = cm ? cm[2].trim() : '';
+}
+if (!duration) {
+const dm = block.match(/(^|\n)\sDuration\s:\s*([^\n]+)/i);
+duration = dm ? dm[2].trim() : '';
+}
+if (!description) {
+const dm = block.match(/(^|\n)\sDuration\s:\s*[^\n]+([\s\S]*)$/i);
+description = dm ? dm[2].trim() : '';
+}
+}
+
+// Normalize level
+let levelOut = '1';
+if (/cantrip/i.test(level)) levelOut = 'cantrip';
+else {
+const lm = (level || '').match(/\b(\d+)\b/);
+if (lm) levelOut = String(parseInt(lm[1], 10));
+else if (/cantrip/i.test(block)) levelOut = 'cantrip';
+}
+
+// Infer school if empty
+if (!school) {
+const sm = block.match(/\b(abjuration|conjuration|divination|enchantment|evocation|illusion|necromancy|transmutation)\b/i);
+if (sm) school = sm[1];
+}
+
+const concentration = /concentration/i.test(duration || '');
+
+return {
+name: name,
+level: levelOut,
+school: school || '',
+castingTime: castingTime || '1 action',
+range: range || 'Touch',
+components: components || 'V, S',
+duration: duration || 'Instantaneous',
+concentration,
+description: (description || '').replace(/"[^"]*"$/s, '').trim()
+};
+}}
 
 
 // No longer needed - we read text files directly
@@ -3427,15 +3298,15 @@ const commonSpells = {
     description: 'You create a long, vine-like whip covered in thorns that lashes out at your command toward a creature in range. Make a melee spell attack against the target. If the attack hits, the creature takes 1d6 piercing damage, and if the creature is Large or smaller, you pull the creature up to 10 feet closer to you. This spell\'s damage increases by 1d6 when you reach 5th level (2d6), 11th level (3d6), and 17th level (4d6).'
   },
 'fireball': {
-  name: 'Fireball',
-  level: '3',
-  school: 'Evocation',
-  castingTime: '1 action',
-  range: '150 feet',
-  components: 'V, S, M (a tiny ball of bat guano and sulfur)',
-  duration: 'Instantaneous',
-  concentration: false,
-  description: 'A bright streak flashes from your pointing finger to a point you choose within range and then blossoms with a low roar into an explosion of flame. Make a ranged spell attack against the target. On a hit, the target takes 1d10 force damage. The spell creates more than one beam when you reach higher levels: two beams at 5th level, three beams at 11th level, and four beams at 17th level.'
+name: 'Fireball',
+level: '3',
+school: 'Evocation',
+castingTime: '1 action',
+range: '150 feet',
+components: 'V, S, M (a tiny ball of bat guano and sulfur)',
+duration: 'Instantaneous',
+concentration: false,
+description: 'A bright streak flashes from your pointing finger to a point you choose within range and then blossoms with a low roar into an explosion of flame. Each creature in a 20-foot-radius sphere centered on that point must make a Dexterity saving throw. A target takes 8d6 fire damage on a failed save, or half as much damage on a successful one.'
 },
 
   'magic missile': {
