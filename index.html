@@ -639,19 +639,13 @@ dialog h3 {
   .coins { gap: 2px; }
   .coin input { width: 30px; }
   .equipment { gap: 3px; }
-}
 
-  .coins { gap: 2px; }
-  .coin input { width: 30px; }
-  .equipment { gap: 3px; }
-}
-
-@media (max-width: 360px) {
   .eq-drop.locked::after {
     font-size: 12px;
     letter-spacing: 1px;
   }
 }
+
 
 @media (orientation: landscape) and (max-height: 500px) {
   :root {
@@ -1487,12 +1481,11 @@ if (!('HTMLDialogElement' in window) || !('showModal' in HTMLDialogElement.proto
   });
 }
 
-<script>
 // === SINGLETON SPELL STATE (avoid duplicate declarations) ===
 window.spells = (window.spells instanceof Map) ? window.spells : new Map();
 window.spellIdCounter = (typeof window.spellIdCounter === 'number') ? window.spellIdCounter : 1;
 window.editingSpellId = (typeof window.editingSpellId !== 'undefined') ? window.editingSpellId : null;
-</script>
+
 
 
 /* ---------- ICON PATHS ---------- */
@@ -3495,10 +3488,21 @@ function getSpellIndicators(spellData) {
 
 
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./service-worker.js')
-    .then(reg => console.log('SW registered'))
-    .catch(err => console.log('SW failed:', err));
+  // Only register on HTTPS or localhost to avoid dev/file:// issues and 206 caching errors
+  const isSecureOrigin =
+    location.protocol === 'https:' ||
+    location.hostname === 'localhost' ||
+    location.hostname === '127.0.0.1';
+
+  if (isSecureOrigin) {
+    navigator.serviceWorker.register('./service-worker.js')
+      .then(reg => console.log('SW registered'))
+      .catch(err => console.log('SW failed:', err));
+  } else {
+    console.log('SW not registered on this origin:', location.origin);
+  }
 }
+
 
 
 </script>
