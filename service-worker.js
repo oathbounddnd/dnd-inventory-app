@@ -1,56 +1,62 @@
-// service-worker.js — safe install + basic cache-first fetch
+// service-worker.js — safe install for GitHub Pages project site
 
-const CACHE_NAME = 'dnd-inventory-cache-v1';
+// IMPORTANT: This file must live at /dnd-inventory-app/service-worker.js for scope to match your pages site.
+const CACHE_NAME = 'dnd-inventory-cache-v2';
 
-// Keep this list minimal and correct. Add more files as needed.
+// Only list URLs you know exist in the deployed site.
+// Add more assets if you want, but 404s will be skipped safely.
 const PRECACHE_URLS = [
-  './',
-  './index.html',
-  './assets/Background.png'
+  '/dnd-inventory-app/',                // root of the project site
+  '/dnd-inventory-app/index.html',
+  '/dnd-inventory-app/assets/Background.png',
+  // Tip: add other assets here once you verify their URLs on GH Pages, e.g.:
+  // '/dnd-inventory-app/assets/WaterDrop.png',
+  // '/dnd-inventory-app/assets/Rations.png'
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     try {
       const cache = await caches.open(CACHE_NAME);
-      // Attempt each request individually so a single failure won't abort install
       await Promise.all(
         PRECACHE_URLS.map(async (url) => {
           try {
             const resp = await fetch(url, { cache: 'no-store' });
-            if (!resp.ok) throw new Error(`Bad response for ${url}: ${resp.status}`);
+            if (!resp.ok) throw new Error(`Bad response ${resp.status}`);
             await cache.put(url, resp.clone());
+            console.log('[SW] Cached:', url);
           } catch (err) {
-            // Log and continue
-            console.warn('[SW] Skipping precache URL due to error:', url, err.message);
+            console.warn('[SW] Skipped (failed to cache):', url, err.message);
           }
         })
       );
     } catch (e) {
       console.warn('[SW] Install encountered an error but will continue:', e.message);
     }
-    // Activate new SW immediately on install
     self.skipWaiting();
   })());
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
-    // Optionally clean old caches here
     const keys = await caches.keys();
     await Promise.all(
-      keys
-        .filter((k) => k !== CACHE_NAME)
-        .map((k) => caches.delete(k))
+      keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))
     );
-    self.clients.claim();
+    await self.clients.claim();
+    console.log('[SW] Activated');
   })());
 });
 
-// Basic cache-first strategy for GET requests
+// Cache-first for GET requests within our scope
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
+
+  const url = new URL(req.url);
+  // Only handle our project scope to avoid caching random third-party stuff
+  const inScope = url.pathname.startsWith('/dnd-inventory-app/');
+  if (!inScope) return; // Let the network handle it
 
   event.respondWith((async () => {
     const cache = await caches.open(CACHE_NAME);
@@ -59,13 +65,12 @@ self.addEventListener('fetch', (event) => {
 
     try {
       const fresh = await fetch(req);
-      // Only cache successful, same-origin responses
-      if (fresh.ok && new URL(req.url).origin === self.location.origin) {
+      if (fresh.ok) {
         cache.put(req, fresh.clone());
       }
       return fresh;
     } catch (e) {
-      // Optional: return a fallback response here if desired
+      // If offline and not cached, give up
       return cached || Response.error();
     }
   })());
