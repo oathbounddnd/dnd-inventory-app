@@ -948,6 +948,7 @@ textarea{ min-height: 80px; resize: vertical; }
 
 .spell-list {
   flex: 1;
+  min-height: 100px; /* Ensures at least 2-3 spells visible before scrolling */
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -958,11 +959,14 @@ textarea{ min-height: 80px; resize: vertical; }
   background: rgba(0,0,0,0.4);
   border: 1px solid #555;
   border-radius: 4px;
-  padding: 6px;
+  padding: 6px 40px 6px 6px; /* Extra padding on right for indicators */
   cursor: pointer;
   position: relative;
   font-size: 10px;
   line-height: 1.2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .spell-item:hover {
@@ -972,7 +976,18 @@ textarea{ min-height: 80px; resize: vertical; }
 
 .spell-name {
   font-weight: 600;
-  margin-bottom: 2px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.spell-description-preview {
+  font-size: 7px;
+  opacity: 0.7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  margin-left: 4px;
 }
 
 .spell-indicators {
@@ -2825,39 +2840,80 @@ function checkCommonSpells(spellName) {
 }
 
 function parseSpellFromText(textContent, spellName) {
-  const spellNameRegex = new RegExp(`\\b${spellName.replace(/\s+/g, '\\s+')}\\b`, 'i');
-  const spellMatch = pdfText.match(spellNameRegex);
+  // Create flexible regex that matches spell name at start of line or after newlines
+  const spellNameEscaped = spellName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  const spellNameRegex = new RegExp(`(?:^|\\n)\\s*(${spellNameEscaped})\\s*(?:\\n|$)`, 'im');
+  const spellMatch = textContent.match(spellNameRegex);
   
   if (!spellMatch) return null;
 
-  // Find the spell block (this is a simplified parser)
-  const startIndex = spellMatch.index;
-  const spellBlock = pdfText.substring(startIndex, startIndex + 2000); // Get ~2000 chars after spell name
+  const startIndex = spellMatch.index + spellMatch[0].indexOf(spellMatch[1]);
   
-  // Extract spell details using regex patterns
-  const levelMatch = spellBlock.match(/(\d+)(?:st|nd|rd|th)[\s-]*level|cantrip/i);
-  const schoolMatch = spellBlock.match(/\b(abjuration|conjuration|divination|enchantment|evocation|illusion|necromancy|transmutation)\b/i);
-  const castingTimeMatch = spellBlock.match(/casting time:?\s*([^\n\r]+)/i);
-  const rangeMatch = spellBlock.match(/range:?\s*([^\n\r]+)/i);
-  const componentsMatch = spellBlock.match(/components:?\s*([^\n\r]+)/i);
-  const durationMatch = spellBlock.match(/duration:?\s*([^\n\r]+)/i);
-  const concentrationMatch = /concentration/i.test(spellBlock);
+  // Find the end - either next spell name (capital letter at start of line) or end of file
+  const afterSpell = textContent.substring(startIndex + spellMatch[1].length);
+  const nextSpellMatch = afterSpell.match(/\n\s*[A-Z][A-Za-z\s']{2,}\s*\n\s*Casting Time:/);
+  const endIndex = nextSpellMatch ? startIndex + spellMatch[1].length + nextSpellMatch.index : textContent.length;
   
-  // Extract description (everything after the stats until next spell or section)
-  const descMatch = spellBlock.match(/(?:duration:?\s*[^\n\r]+\s*)(.*?)(?:\n\s*\n|$)/is);
+  const spellBlock = textContent.substring(startIndex, endIndex);
+  console.log('Parsing spell block:', spellBlock.substring(0, 200));
+  
+  // More flexible extraction patterns
+  const castingTimeMatch = spellBlock.match(/Casting\s+Time:\s*([^\n]+)/i);
+  const rangeMatch = spellBlock.match(/Range:\s*([^\n]+)/i);
+  const componentsMatch = spellBlock.match(/Components:\s*([^\n]+)/i);
+  const durationMatch = spellBlock.match(/Duration:\s*([^\n]+)/i);
+  
+  // Determine level and school from context
+  let level = '1';
+  let school = '';
+  
+  // Check for level/school line (common formats)
+  const levelSchoolMatch = spellBlock.match(/(\d+)(?:st|nd|rd|th)[\s-]level\s+(\w+)/i);
+  if (levelSchoolMatch) {
+    level = levelSchoolMatch[1];
+    school = levelSchoolMatch[2];
+  } else if (/cantrip/i.test(spellBlock.substring(0, 200))) {
+    level = 'cantrip';
+  }
+  
+  // Try to find school if not found
+  if (!school) {
+    const schoolMatch = spellBlock.match(/\b(abjuration|conjuration|divination|enchantment|evocation|illusion|necromancy|transmutation)\b/i);
+    if (schoolMatch) school = schoolMatch[1];
+  }
+  
+  // Check for concentration
+  const concentration = /concentration/i.test(durationMatch ? durationMatch[1] : '');
+  
+  // Extract description - everything after Duration line
+  let description = '';
+  const durationIndex = spellBlock.search(/Duration:\s*[^\n]+/i);
+  if (durationIndex > -1) {
+    const afterDuration = spellBlock.substring(durationIndex);
+    const descStart = afterDuration.indexOf('\n');
+    if (descStart > -1) {
+      description = afterDuration.substring(descStart + 1).trim();
+      // Remove quoted flavor text at the end
+      description = description.replace(/"[^"]*"$/s, '').trim();
+    }
+  }
 
-  return {
-    name: spellName,
-    level: levelMatch ? (levelMatch[1] || 'cantrip') : '1',
-    school: schoolMatch ? schoolMatch[1] : '',
-    castingTime: castingTimeMatch ? castingTimeMatch[1].trim() : '',
-    range: rangeMatch ? rangeMatch[1].trim() : '',
-    components: componentsMatch ? componentsMatch[1].trim() : '',
-    duration: durationMatch ? durationMatch[1].trim() : '',
-    concentration: concentrationMatch,
-    description: descMatch ? descMatch[1].trim() : ''
+  const result = {
+    name: spellMatch[1].trim(),
+    level: level,
+    school: school,
+    castingTime: castingTimeMatch ? castingTimeMatch[1].trim() : '1 action',
+    range: rangeMatch ? rangeMatch[1].trim() : 'Touch',
+    components: componentsMatch ? componentsMatch[1].trim() : 'V, S',
+    duration: durationMatch ? durationMatch[1].trim() : 'Instantaneous',
+    concentration: concentration,
+    description: description
   };
+  
+  console.log('Parsed spell:', result);
+  return result;
 }
+
 
 async function searchWebSources(spellName) {
   // Web scraping is limited by CORS policies
@@ -2959,10 +3015,15 @@ function createSpellElement(spellData, id) {
 
 function updateSpellElement(element, spellData) {
   const indicators = getSpellIndicators(spellData);
+  
+  // Get first 50 chars of description for preview
+  const descPreview = spellData.description ? 
+    spellData.description.substring(0, 80).replace(/\n/g, ' ') : '';
+  
   element.innerHTML = `
     <div class="spell-name">${spellData.name}</div>
+    ${descPreview ? `<div class="spell-description-preview">${descPreview}...</div>` : ''}
     <div class="spell-indicators">${indicators}</div>
-    ${spellData.school ? `<div style="font-size: 9px; opacity: 0.8;">${spellData.school}</div>` : ''}
   `;
 }
 
