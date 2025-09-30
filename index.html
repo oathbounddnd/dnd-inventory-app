@@ -7,7 +7,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
-<link rel="manifest" href="manifest.webmanifest">
+<!-- Manifest causes a CORS warning when opened via file://
+     It will work fine when served over http/https. -->
+<!-- <link rel="manifest" href="manifest.webmanifest"> -->
+
 <style>
 /* ======== NO PAGE SCROLL + DRAG-SAFE BASE ======== */
 body {
@@ -609,8 +612,10 @@ dialog{
   max-height: 90svh;
   overflow: auto;
   box-shadow: 0 10px 30px #000c, inset 0 1px 0 #ffffff10;
-  touch-action: auto;         /* re-enable scrolling inside dialog if needed */
+  touch-action: auto;
+  z-index: 10000; /* ensure it's on top even if something uses high z-index */
 }
+
 dialog h3 {
   font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
   font-weight: 600;
@@ -969,6 +974,8 @@ textarea{ min-height: 80px; resize: vertical; }
   display: none !important;
 }
 
+
+
 .spell-list {
   flex: 1;
   overflow-y: auto;
@@ -1048,6 +1055,15 @@ textarea{ min-height: 80px; resize: vertical; }
   font-weight: bold;
   color: white;
 }
+
+/* Colored dots */
+.spell-indicators .spell-indicator.action { background: #d32f2f !important; }       /* red */
+.spell-indicators .spell-indicator.bonus { background: #1976d2 !important; }        /* blue */
+.spell-indicators .spell-indicator.reaction { background: #388e3c !important; }     /* green */
+.spell-indicators .spell-indicator.concentration { background: #f57c00 !important;} /* orange */
+
+
+
 
 @media (max-width: 480px) {
   .spell-section {
@@ -1940,25 +1956,229 @@ document.addEventListener('click', function(e) {
     var title = item.dataset.spellName || 'Spell';
     var body  = item.dataset.description || 'No description available.';
 
+    // Ensure the dialog exists; create if missing
     var dlg = document.getElementById('spellTextDialog');
+    if (!dlg) {
+      dlg = document.createElement('dialog');
+      dlg.id = 'spellTextDialog';
+      dlg.innerHTML = ''
+        + '<h3 id="spellTextTitle">Spell</h3>'
+        + '<div id="spellTextBody" style="font-size: 12px; line-height: 1.4; white-space: pre-wrap;"></div>'
+        + '<div class="actions" style="margin-top: 12px; display:flex; justify-content:flex-end; gap:8px;">'
+        + '  <button type="button" class="btn" id="closeSpellTextBtn">Close</button>'
+        + '</div>';
+      document.body.appendChild(dlg);
+      var closeBtn = dlg.querySelector('#closeSpellTextBtn');
+      if (closeBtn) {
+        closeBtn.addEventListener('click', function(){
+          try { dlg.close(); } catch (err) { dlg.removeAttribute('open'); }
+        });
+      }
+    }
+
     document.getElementById('spellTextTitle').textContent = title;
     document.getElementById('spellTextBody').textContent  = body;
 
     try { dlg.showModal(); } catch (err) { dlg.setAttribute('open',''); }
     return;
   }
-});
+}, false);
 
-// Close button for text dialog
-(function() {
-  var btn = document.getElementById('closeSpellTextBtn');
-  if (btn) {
-    btn.addEventListener('click', function() {
-      var dlg = document.getElementById('spellTextDialog');
-      try { dlg.close(); } catch (err) { dlg.removeAttribute('open'); }
+
+
+// Give headers button semantics once at startup (plain JS)
+(function initSpellHeaders(){
+  var headers = document.querySelectorAll('.spell-section > h3');
+  for (var i = 0; i < headers.length; i++) {
+    headers[i].setAttribute('role', 'button');
+    headers[i].setAttribute('tabindex', '0');
+    headers[i].setAttribute('aria-expanded', 'true');
+  }
+})();
+
+
+
+
+/* === SPELLBOOK: ADD / EDIT / DELETE / SAVE WIRING (plain JS) === */
+(function wireSpellbookCrud(){
+  // Global-ish state (don’t clobber existing)
+  if (!(window.spells instanceof Map)) window.spells = new Map();
+  if (typeof window.spellIdCounter !== 'number') window.spellIdCounter = 1;
+  if (typeof window.editingSpellId === 'undefined') window.editingSpellId = null;
+
+  // Elements
+  var spellDialog = document.getElementById('spellDialog');
+  var spellForm   = document.getElementById('spellForm');
+  var addSpellBtn = document.getElementById('addSpellBtn');
+  var saveSpellBtn= document.getElementById('saveSpellBtn');
+  var cancelSpellBtn = document.getElementById('cancelSpellBtn');
+  var deleteSpellBtn = document.getElementById('deleteSpellBtn');
+  var autoFillBtn = document.getElementById('autoFillBtn');
+
+  // Field getters
+  function getSpellDataFromForm(){
+    return {
+      name: (document.getElementById('spellName').value || '').trim(),
+      level: document.getElementById('spellLevel').value,
+      school: document.getElementById('spellSchool').value || '',
+      castingTime: document.getElementById('castingTime').value || '',
+      range: document.getElementById('spellRange').value || '',
+      components: document.getElementById('spellComponents').value || '',
+      duration: document.getElementById('spellDuration').value || '',
+      concentration: !!document.getElementById('spellConcentration').checked,
+      description: (document.getElementById('spellDescription').value || '').trim()
+    };
+  }
+  function setSpellForm(data){
+    document.getElementById('spellName').value = data.name || '';
+    document.getElementById('spellLevel').value = data.level || 'cantrip';
+    document.getElementById('spellSchool').value = data.school || '';
+    document.getElementById('castingTime').value = data.castingTime || '';
+    document.getElementById('spellRange').value = data.range || '';
+    document.getElementById('spellComponents').value = data.components || '';
+    document.getElementById('spellDuration').value = data.duration || '';
+    document.getElementById('spellConcentration').checked = !!data.concentration;
+    document.getElementById('spellDescription').value = data.description || '';
+  }
+
+  // Helpers
+  function listIdForLevel(level){
+    return (level === 'cantrip') ? 'cantrips' : ('level' + String(level));
+  }
+  function findSpellList(level){
+    var id = listIdForLevel(level);
+    return document.getElementById(id);
+  }
+  function createSpellElement(spellData, id){
+    var el = document.createElement('div');
+    el.className = 'spell-item';
+    el.dataset.id = id;
+    // render (uses updateSpellElement you already have)
+    if (typeof updateSpellElement === 'function') {
+      updateSpellElement(el, spellData);
+    } else {
+      // minimal fallback (name only)
+      el.textContent = spellData.name || 'Spell';
+    }
+    // click-to-edit (but NOT when clicking the Show text button)
+    el.addEventListener('click', function(ev){
+      var t = ev.target;
+      if (t && t.closest && t.closest('.spell-show-btn')) return; // do not open edit on button
+      openEditSpell(id);
+    });
+    return el;
+  }
+  function mountOrMoveSpellElement(id, spellData){
+    var list = findSpellList(spellData.level);
+    if (!list) return;
+    var el = document.querySelector('.spell-item[data-id="'+id+'"]');
+    if (!el) {
+      el = createSpellElement(spellData, id);
+      list.appendChild(el);
+    } else {
+      if (typeof updateSpellElement === 'function') updateSpellElement(el, spellData);
+      // Move if level changed
+      if (el.parentElement !== list) list.appendChild(el);
+    }
+  }
+  function scheduleSaveSafe(){
+    try { if (typeof scheduleSave === 'function') scheduleSave(); }
+    catch(e){}
+  }
+  function closeSpellDlg(){
+    try { spellDialog.close(); } catch(e){ spellDialog.removeAttribute('open'); }
+  }
+  function openSpellDlg(){
+    try { spellDialog.showModal(); } catch(e){ spellDialog.setAttribute('open',''); }
+  }
+
+  // OPEN: Add
+  if (addSpellBtn) {
+    addSpellBtn.addEventListener('click', function(){
+      window.editingSpellId = null;
+      setSpellForm({ level: 'cantrip' });
+      // Dialog title & delete button visibility
+      var title = document.getElementById('spellDlgTitle');
+      if (title) title.textContent = 'Add Spell';
+      if (deleteSpellBtn) deleteSpellBtn.style.display = 'none';
+      openSpellDlg();
+    });
+  }
+
+  // CANCEL
+  if (cancelSpellBtn) {
+    cancelSpellBtn.addEventListener('click', function(){
+      closeSpellDlg();
+    });
+  }
+
+  // DELETE
+  if (deleteSpellBtn) {
+    deleteSpellBtn.addEventListener('click', function(){
+      if (!window.editingSpellId) return;
+      var id = window.editingSpellId;
+      var el = document.querySelector('.spell-item[data-id="'+id+'"]');
+      if (el && el.parentElement) el.parentElement.removeChild(el);
+      if (window.spells.has(id)) window.spells.delete(id);
+      window.editingSpellId = null;
+      scheduleSaveSafe();
+      closeSpellDlg();
+    });
+  }
+
+  // SAVE (form submit)
+  if (spellForm) {
+    spellForm.addEventListener('submit', function(ev){
+      ev.preventDefault();
+      var data = getSpellDataFromForm();
+      if (!data.name) return; // require a name
+
+      // normalize level to either 'cantrip' or '1'..'9'
+      if (data.level !== 'cantrip') {
+        data.level = String(parseInt(data.level, 10));
+      }
+
+      if (window.editingSpellId) {
+        // update
+        var id = window.editingSpellId;
+        window.spells.set(id, { data: data });
+        mountOrMoveSpellElement(id, data);
+      } else {
+        // add new
+        var id = 'sp' + (window.spellIdCounter++);
+        window.spells.set(id, { data: data });
+        mountOrMoveSpellElement(id, data);
+      }
+      scheduleSaveSafe();
+      closeSpellDlg();
+    });
+  }
+
+  // OPEN: Edit from an existing row
+  function openEditSpell(id){
+    var entry = window.spells.get(id);
+    if (!entry || !entry.data) return;
+    window.editingSpellId = id;
+    setSpellForm(entry.data);
+    var title = document.getElementById('spellDlgTitle');
+    if (title) title.textContent = 'Edit Spell';
+    if (deleteSpellBtn) deleteSpellBtn.style.display = 'inline-block';
+    openSpellDlg();
+  }
+
+  // OPTIONAL: Auto Fill click (no-op if you wire later)
+  if (autoFillBtn) {
+    autoFillBtn.addEventListener('click', function(){
+      // placeholder – keep button from doing nothing silently
+      // You can wire your fetch/autofill here if desired.
+      // For now, just focus the name field to hint action.
+      var nameEl = document.getElementById('spellName');
+      if (nameEl) nameEl.focus();
     });
   }
 })();
+
+
 
 // Give headers button semantics once at startup (plain JS)
 (function initSpellHeaders(){
@@ -3186,67 +3406,39 @@ function openEditSpellDialog(id) {
 }
 
 // Save spell
-spellForm.addEventListener('submit', (e) => {
-  e.preventDefault();
-  const name = document.getElementById('spellName').value.trim();
-  if (!name) return;
-  
-  const spellData = {
-    name,
-    level: document.getElementById('spellLevel').value,
-    school: document.getElementById('spellSchool').value,
-    castingTime: document.getElementById('castingTime').value,
-    range: document.getElementById('spellRange').value,
-    components: document.getElementById('spellComponents').value,
-    duration: document.getElementById('spellDuration').value,
-    concentration: document.getElementById('spellConcentration').checked,
-    description: document.getElementById('spellDescription').value
-  };
-  
-if (editingSpellId) {
-    // Update existing spell
-    const spell = spells.get(editingSpellId);
-    if (spell) {
-      spell.data = spellData;
-      updateSpellElement(spell.element, spellData);
-    }
-  } else {
-    // Create new spell
-    const id = 'spell' + (spellIdCounter++);
-    const element = createSpellElement(spellData, id);
-    const listId = spellData.level === 'cantrip' ? 'cantrips' : `level${spellData.level}`;
-    document.getElementById(listId).appendChild(element);
-    spells.set(id, { data: spellData, element });
-  }
-  
-  scheduleSave(); // Auto-save spell changes
-  spellDialog.close();
-});
+/* Removed duplicate submit handler — handled by handleSpellFormSubmit via rewireSpellFormOnce() */
+
 
 function createSpellElement(spellData, id) {
-// Prevent the "Show text" button from bubbling to the row's edit click
-element.addEventListener('click', function(ev) {
-  var t = ev.target;
-  if (t && t.closest && t.closest('.spell-show-btn')) {
-    ev.stopPropagation();
-  }
-}, true);
-
-
-
   const element = document.createElement('div');
   element.className = 'spell-item';
   element.dataset.id = id;
-  element.addEventListener('click', () => openEditSpellDialog(id));
-  
+
+  // Row click opens Edit (but NOT when pressing the Show text button)
+  element.addEventListener('click', function(ev){
+    var t = ev.target;
+    if (t && t.closest && t.closest('.spell-show-btn')) return;
+    if (typeof openEditSpellDialog === 'function') openEditSpellDialog(id);
+  });
+
+  // Guard: prevent Show text clicks from bubbling to the row
+  element.addEventListener('click', function(ev) {
+    var t = ev.target;
+    if (t && t.closest && t.closest('.spell-show-btn')) {
+      ev.stopPropagation();
+    }
+  }, true);
+
   updateSpellElement(element, spellData);
   return element;
 }
 
+
+
 function updateSpellElement(element, spellData) {
   var indicators = getSpellIndicators(spellData);
   var school = (spellData.school || '').trim();
-  var levelLabel = spellData.level === 'cantrip' ? 'Cantrip' : (spellData.level + ' lvl');
+  var levelLabel = (spellData.level === 'cantrip') ? 'Cantrip' : (spellData.level + ' lvl');
   var subtitle = school ? (school + ' • ' + levelLabel) : levelLabel;
   var description = (spellData.description || '').trim();
 
@@ -3265,26 +3457,30 @@ function updateSpellElement(element, spellData) {
 
 
 
+
+
+
 function getSpellIndicators(spellData) {
-  let indicators = '';
-  
-  // Determine action type from casting time
-  const castingTime = (spellData.castingTime || '').toLowerCase();
-  if (castingTime.includes('bonus')) {
-    indicators += '<div class="spell-indicator bonus">B</div>';
-  } else if (castingTime.includes('reaction')) {
-    indicators += '<div class="spell-indicator reaction">R</div>';
+  // A/B/R inferred from castingTime; C when concentration
+  var html = '';
+  var castingTime = (spellData && spellData.castingTime || '').toLowerCase();
+
+  if (castingTime.indexOf('bonus') !== -1) {
+    html += '<div class="spell-indicator bonus" title="Bonus">B</div>';
+  } else if (castingTime.indexOf('reaction') !== -1) {
+    html += '<div class="spell-indicator reaction" title="Reaction">R</div>';
   } else {
-    indicators += '<div class="spell-indicator action">A</div>';
+    html += '<div class="spell-indicator action" title="Action">A</div>';
   }
-  
-  // Concentration
-  if (spellData.concentration) {
-    indicators += '<div class="spell-indicator concentration">C</div>';
+
+  if (spellData && spellData.concentration) {
+    html += '<div class="spell-indicator concentration" title="Concentration">C</div>';
   }
-  
-  return indicators;
+  return html;
 }
+
+
+
 
 
 if ('serviceWorker' in navigator) {
