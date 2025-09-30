@@ -1988,13 +1988,6 @@ document.addEventListener('click', function(e) {
 /* (deduped) helper removed here – a single unified openSpellTextModal() is defined later */
 
 
-  document.getElementById('spellTextTitle').textContent = title || 'Spell';
-  document.getElementById('spellTextBody').textContent  = body || 'No description available.';
-  try { dlg.showModal(); } catch (err) { dlg.setAttribute('open',''); }
-}
-
-
-
 // Give headers button semantics once at startup (plain JS)
 (function initSpellHeaders(){
   var headers = document.querySelectorAll('.spell-section > h3');
