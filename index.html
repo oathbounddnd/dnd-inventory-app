@@ -3188,91 +3188,94 @@ return spells;
 
 /* Parse a single spell block (prefers explicit fields like "Name:", supports legacy too) */
 function parseSpellBlock(spellBlock) {
-const block = (spellBlock || '').replace(/\r/g, '');
+  const block = (spellBlock || '').replace(/\r/g, '');
 
-// Try explicit fields first
-const get = (label) => {
-const m = block.match(new RegExp((^|\\n)\\s*${label}\\s*:\\s*([^\\n]+), 'i'));
-return m ? m[2].trim() : '';
-};
+  // Try explicit fields first
+  const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const get = (label) => {
+    // Match start-of-line or newline, optional spaces, Label:, capture value to end of line
+    const pattern = new RegExp(`(^|\\n)\\s*${escapeRegex(label)}\\s*:\\s*([^\\n]+)`, 'i');
+    const m = block.match(pattern);
+    return m ? m[2].trim() : '';
+  };
 
-let name = get('Name');
-let level = get('Level');
-let school = get('School');
-let castingTime = get('Casting\s*Time') || get('CastingTime') || '';
-let range = get('Range');
-let components = get('Components');
-let duration = get('Duration');
+  let name = get('Name');
+  let level = get('Level');
+  let school = get('School');
+  let castingTime = get('Casting Time') || get('CastingTime') || '';
+  let range = get('Range');
+  let components = get('Components');
+  let duration = get('Duration');
 
-// Description: either "Description:" label or everything after Duration line
-let description = '';
-const descLabel = block.match(/(^|\n)\sDescription\s:\s*([\s\S])$/i);
-if (descLabel) {
-description = descLabel[2].trim();
-} else {
-const dIdx = block.search(/(^|\n)\sDuration\s*:\s*[^\n]+/i);
-if (dIdx > -1) {
-const after = block.slice(dIdx);
-const nl = after.indexOf('\n');
-description = nl > -1 ? after.slice(nl + 1).trim() : '';
-}
-}
+  // Description: either "Description:" label or everything after Duration line
+  let description = '';
+  const descLabel = block.match(/(^|\n)\s*Description\s*:\s*([\s\S]+)$/i);
+  if (descLabel) {
+    description = descLabel[2].trim();
+  } else {
+    const dIdx = block.search(/(^|\n)\s*Duration\s*:\s*[^\n]+/i);
+    if (dIdx > -1) {
+      const after = block.slice(dIdx);
+      const nl = after.indexOf('\n');
+      description = nl > -1 ? after.slice(nl + 1).trim() : '';
+    }
+  }
 
-// If explicit fields missing, fall back to legacy cues
-if (!name) {
-const lines = block.split('\n');
-name = (lines[0] || '').trim() || 'Unknown';
-if (!castingTime) {
-const ct = block.match(/(^|\n)\sCasting\s+Time\s:\s*([^\n]+)/i);
-castingTime = ct ? ct[2].trim() : '';
-}
-if (!range) {
-const rm = block.match(/(^|\n)\sRange\s:\s*([^\n]+)/i);
-range = rm ? rm[2].trim() : '';
-}
-if (!components) {
-const cm = block.match(/(^|\n)\sComponents\s:\s*([^\n]+)/i);
-components = cm ? cm[2].trim() : '';
-}
-if (!duration) {
-const dm = block.match(/(^|\n)\sDuration\s:\s*([^\n]+)/i);
-duration = dm ? dm[2].trim() : '';
-}
-if (!description) {
-const dm = block.match(/(^|\n)\sDuration\s:\s*[^\n]+([\s\S]*)$/i);
-description = dm ? dm[2].trim() : '';
-}
-}
+  // If explicit fields missing, fall back to legacy cues
+  if (!name) {
+    const lines = block.split('\n');
+    name = (lines[0] || '').trim() || 'Unknown';
+    if (!castingTime) {
+      const ct = block.match(/(^|\n)\s*Casting\s+Time\s*:\s*([^\n]+)/i);
+      castingTime = ct ? ct[2].trim() : '';
+    }
+    if (!range) {
+      const rm = block.match(/(^|\n)\s*Range\s*:\s*([^\n]+)/i);
+      range = rm ? rm[2].trim() : '';
+    }
+    if (!components) {
+      const cm = block.match(/(^|\n)\s*Components\s*:\s*([^\n]+)/i);
+      components = cm ? cm[2].trim() : '';
+    }
+    if (!duration) {
+      const dm = block.match(/(^|\n)\s*Duration\s*:\s*([^\n]+)/i);
+      duration = dm ? dm[2].trim() : '';
+    }
+    if (!description) {
+      const dm2 = block.match(/(^|\n)\s*Duration\s*:\s*[^\n]+([\s\S]*)$/i);
+      description = dm2 ? dm2[2].trim() : '';
+    }
+  }
 
-// Normalize level
-let levelOut = '1';
-if (/cantrip/i.test(level)) levelOut = 'cantrip';
-else {
-const lm = (level || '').match(/\b(\d+)\b/);
-if (lm) levelOut = String(parseInt(lm[1], 10));
-else if (/cantrip/i.test(block)) levelOut = 'cantrip';
+  // Normalize level
+  let levelOut = '1';
+  if (/cantrip/i.test(level)) levelOut = 'cantrip';
+  else {
+    const lm = (level || '').match(/\b(\d+)\b/);
+    if (lm) levelOut = String(parseInt(lm[1], 10));
+    else if (/cantrip/i.test(block)) levelOut = 'cantrip';
+  }
+
+  // Infer school if empty
+  if (!school) {
+    const sm = block.match(/\b(abjuration|conjuration|divination|enchantment|evocation|illusion|necromancy|transmutation)\b/i);
+    if (sm) school = sm[1];
+  }
+
+  const concentration = /concentration/i.test(duration || '');
+
+  return {
+    name: name,
+    level: levelOut,
+    school: school || '',
+    castingTime: castingTime || '1 action',
+    range: range || 'Touch',
+    components: components || 'V, S',
+    duration: duration || 'Instantaneous',
+    concentration,
+    description: (description || '').replace(/"[^"]*"$/s, '').trim()
+  };
 }
-
-// Infer school if empty
-if (!school) {
-const sm = block.match(/\b(abjuration|conjuration|divination|enchantment|evocation|illusion|necromancy|transmutation)\b/i);
-if (sm) school = sm[1];
-}
-
-const concentration = /concentration/i.test(duration || '');
-
-return {
-name: name,
-level: levelOut,
-school: school || '',
-castingTime: castingTime || '1 action',
-range: range || 'Touch',
-components: components || 'V, S',
-duration: duration || 'Instantaneous',
-concentration,
-description: (description || '').replace(/"[^"]*"$/s, '').trim()
-};
-}}
 
 
 // No longer needed - we read text files directly
