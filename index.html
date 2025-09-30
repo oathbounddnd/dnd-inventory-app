@@ -906,6 +906,32 @@ textarea{ min-height: 80px; resize: vertical; }
   flex: 1;
 }
 
+/* Ensure each spell section has room for a scrollable list */
+.spell-grid {
+  /* Each card gets at least 220px of height */
+  grid-auto-rows: minmax(220px, auto);
+}
+
+/* Give the section itself a minimum height so .spell-list (flex:1) has space */
+.spell-section {
+  min-height: 220px;
+}
+
+/* Make the inner list scroll nicely on iOS and allow vertical panning */
+.spell-list {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+/* Small screens: a touch more height so 2–3 items are visible */
+@media (max-width: 480px) {
+  .spell-section {
+    min-height: 260px;
+  }
+}
+
+
 .spell-section {
   background: var(--slot-bg);
   border: var(--slot-border);
