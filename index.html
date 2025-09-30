@@ -3089,10 +3089,13 @@ async function fetchSpellData(spellName) {
 
       
 async function searchSpellFiles(spellName) {
-  if (!window._spellTxtIndex) {
-    window._spellTxtIndex = await buildSpellTextIndex();
-  }
-  const idx = window._spellTxtIndex;
+  const files = ['Spell1.txt', 'Spell2.txt', 'Spell3.txt', 'Spell4.txt', 'Spell5.txt'];
+  const paths = (f) => [
+    `Books/${f}`,
+    `./Books/${f}`,
+    `/Books/${f}`,
+    `books/${f}`
+  ];
 
   const norm = (s) => (s || '')
     .toLowerCase()
@@ -3102,34 +3105,38 @@ async function searchSpellFiles(spellName) {
     .trim();
 
   const q = norm(spellName);
-  if (!q) return null;
+  let best = null;
 
-  // exact -> startsWith -> includes
-  let bestBlock = null;
-  for (const b of idx.blocks) {
-    if (b.nameNorm === q) { bestBlock = b.block; break; }
-    if (!bestBlock && b.nameNorm.startsWith(q)) bestBlock = b.block;
-    if (!bestBlock && b.nameNorm.includes(q)) bestBlock = b.block;
-  }
-  if (bestBlock) {
-    console.log('[TXT] Found (direct match).');
-    return parseSpellBlock(bestBlock);
-  }
+  for (const fname of files) {
+    let textData = '';
+    for (const p of paths(fname)) {
+      try {
+        const res = await fetch(`${p}?v=${Date.now()}`, { cache: 'no-store' });
+        if (!res.ok) continue;
+        textData = await res.text();
+        break;
+      } catch (_) {}
+    }
+    if (!textData) continue;
 
-  // fuzzy
-  let best = { dist: Infinity, block: null, nameNorm: '' };
-  for (const b of idx.blocks) {
-    const d = levenshtein(q, b.nameNorm);
-    if (d < best.dist) best = { dist: d, block: b.block, nameNorm: b.nameNorm };
-  }
-  const threshold = q.length <= 8 ? 2 : 3;
-  if (best.block && best.dist <= threshold) {
-    console.log('[TXT] Fuzzy match picked:', best.nameNorm, 'distance=', best.dist);
-    return parseSpellBlock(best.block);
-  }
+    const blocks = splitIntoSpells(textData);
+    for (const block of blocks) {
+      const parsed = parseSpellBlock(block);
+      const n = norm(parsed.name);
+      if (!n) continue;
 
-  console.log('[TXT] No match found. Indexed blocks:', idx.blocks.length, 'Paths:', idx.okPaths);
-  return null;
+      // Exact match first
+      if (n === q) return parsed;
+
+      // Fuzzy fallback: startsWith or contains whole word
+      if (!best) {
+        if (n.startsWith(q) || n.includes(` ${q} `) || n.endsWith(` ${q}`)) {
+          best = parsed;
+        }
+      }
+    }
+  }
+  return best; // may be null
 }
 
 
@@ -3207,46 +3214,43 @@ function levenshtein(a, b) {
   return dp[n];
 }
 
-// Split text file into individual spell blocks
+/* Split text file into individual spells (supports markers or legacy format) */
 function splitIntoSpells(textContent) {
-  const text = (textContent || '').replace(/\r/g, '');
-  const lines = text.split('\n');
+  const txt = (textContent || '').replace(/\r/g, '');
 
-  // MODE A: Explicit markers (preferred)
-  // Block is everything from "=== SPELL START ===" to "=== SPELL END ==="
-  const startRe = /^\s*===\s*SPELL\s+START\s*===\s*$/i;
-  const endRe   = /^\s*===\s*SPELL\s+END\s*===\s*$/i;
-
-  let hasMarkers = false;
-  for (let i = 0; i < lines.length; i++) {
-    if (startRe.test(lines[i]) || endRe.test(lines[i])) { hasMarkers = true; break; }
-  }
-
-  if (hasMarkers) {
-    const spells = [];
-    let cur = [];
-    let inside = false;
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (startRe.test(line)) {
-        if (inside && cur.length) spells.push(cur.join('\n')); // close any open block
-        cur = [];
-        inside = true;
-        continue;
-      }
-      if (endRe.test(line)) {
-        if (inside) {
-          spells.push(cur.join('\n'));
-          cur = [];
-          inside = false;
-        }
-        continue;
-      }
-      if (inside) cur.push(line);
+  // Preferred: explicit markers
+  if (txt.includes('=== SPELL START ===') && txt.includes('=== SPELL END ===')) {
+    const out = [];
+    const re = /=== SPELL START ===([\s\S]*?)=== SPELL END ===/g;
+    let m;
+    while ((m = re.exec(txt)) !== null) {
+      const block = m[1].trim();
+      if (block) out.push(block);
     }
-    // ignore trailing open block without END
-    return spells;
+    if (out.length) return out;
   }
+
+  // Fallback: name line followed by "Casting Time:" line
+  const spells = [];
+  const lines = txt.split('\n');
+  let cur = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = (lines[i] || '').trim();
+    if (line && i + 1 < lines.length) {
+      const next = (lines[i + 1] || '').trim();
+      if (/^Casting\s+Time:/i.test(next)) {
+        if (cur.length) spells.push(cur.join('\n'));
+        cur = [line];
+        continue;
+      }
+    }
+    if (cur.length) cur.push(lines[i]);
+  }
+  if (cur.length) spells.push(cur.join('\n'));
+  return spells;
+}
+
 
   // MODE B: Legacy heuristic (no markers)
   const spells = [];
@@ -3275,58 +3279,94 @@ function splitIntoSpells(textContent) {
 
 
 
+/* Parse a single spell block (prefers explicit fields like "Name:", supports legacy too) */
 function parseSpellBlock(spellBlock) {
   const block = (spellBlock || '').replace(/\r/g, '');
-  const lines = block.split('\n');
 
-  // Helper
-  const pick = (re) => {
-    const m = block.match(re);
-    return m ? (m[1] || '').trim() : '';
-  };
-  const normLevel = (v) => {
-    const s = String(v || '').toLowerCase().trim();
-    if (!s) return '';
-    if (s === 'cantrip') return 'cantrip';
-    const n = parseInt(s, 10);
-    return isFinite(n) ? String(n) : s;
+  // Try explicit fields first
+  const get = (label) => {
+    const m = block.match(new RegExp(`(^|\\n)\\s*${label}\\s*:\\s*([^\\n]+)`, 'i'));
+    return m ? m[2].trim() : '';
   };
 
-  // MODE A: Fielded within markers
-  // We consider it "marker-style" if we see a Name: line or Description: label.
-  const hasFieldLines =
-    /(^|\n)\s*Name\s*:/i.test(block) || /(^|\n)\s*Description\s*:/i.test(block);
+  let name = get('Name');
+  let level = get('Level');
+  let school = get('School');
+  let castingTime = get('Casting\\s*Time') || get('CastingTime') || '';
+  let range = get('Range');
+  let components = get('Components');
+  let duration = get('Duration');
 
-  if (hasFieldLines) {
-    const name        = pick(/(^|\n)\s*Name\s*:\s*([^\n]+)/i) || 'Spell';
-    const levelRaw    = pick(/(^|\n)\s*Level\s*:\s*([^\n]+)/i);
-    const school      = pick(/(^|\n)\s*School\s*:\s*([^\n]+)/i);
-    const castingTime = pick(/(^|\n)\s*Casting\s*Time\s*:\s*([^\n]+)/i) || '1 action';
-    const range       = pick(/(^|\n)\s*Range\s*:\s*([^\n]+)/i) || '';
-    const components  = pick(/(^|\n)\s*Components\s*:\s*([^\n]+)/i) || '';
-    const duration    = pick(/(^|\n)\s*Duration\s*:\s*([^\n]+)/i) || '';
-
-    // Description: everything after the "Description:" line
-    let description = '';
-    const descMatch = block.match(/(^|\n)\s*Description\s*:\s*([\s\S]*)$/i);
-    if (descMatch) description = (descMatch[2] || '').trim();
-    description = description.replace(/^\s*===\s*SPELL\s+END\s*===\s*$/i, '').trim();
-
-    const level = normLevel(levelRaw) || (/(^|\s)cantrip(\s|$)/i.test(block) ? 'cantrip' : '');
-    const concentration = /concentration/i.test(duration);
-
-    return {
-      name,
-      level: level || '1',
-      school: (school || '').trim(),
-      castingTime,
-      range,
-      components,
-      duration,
-      concentration,
-      description
-    };
+  // Description: either "Description:" label or everything after Duration line
+  let description = '';
+  const descLabel = block.match(/(^|\n)\s*Description\s*:\s*([\s\S]*)$/i);
+  if (descLabel) {
+    description = descLabel[2].trim();
+  } else {
+    const dIdx = block.search(/(^|\n)\s*Duration\s*:\s*[^\n]+/i);
+    if (dIdx > -1) {
+      const after = block.slice(dIdx);
+      const nl = after.indexOf('\n');
+      description = nl > -1 ? after.slice(nl + 1).trim() : '';
+    }
   }
+
+  // If explicit fields missing, fall back to legacy header parsing
+  if (!name) {
+    const lines = block.split('\n');
+    name = (lines[0] || '').trim() || 'Unknown';
+    if (!castingTime) {
+      const ct = block.match(/(^|\n)\s*Casting\s+Time\s*:\s*([^\n]+)/i);
+      castingTime = ct ? ct[2].trim() : '';
+    }
+    if (!range) {
+      const rm = block.match(/(^|\n)\s*Range\s*:\s*([^\n]+)/i);
+      range = rm ? rm[2].trim() : '';
+    }
+    if (!components) {
+      const cm = block.match(/(^|\n)\s*Components\s*:\s*([^\n]+)/i);
+      components = cm ? cm[2].trim() : '';
+    }
+    if (!duration) {
+      const dm = block.match(/(^|\n)\s*Duration\s*:\s*([^\n]+)/i);
+      duration = dm ? dm[2].trim() : '';
+    }
+    if (!description) {
+      // everything after Duration line (if any)
+      const dm = block.match(/(^|\n)\s*Duration\s*:\s*[^\n]+([\s\S]*)$/i);
+      description = dm ? dm[2].trim() : '';
+    }
+  }
+
+  // Normalize level
+  let levelOut = '1';
+  if (/cantrip/i.test(level)) levelOut = 'cantrip';
+  else {
+    const lm = (level || '').match(/\b(\d+)\b/);
+    if (lm) levelOut = String(parseInt(lm[1], 10));
+    else if (/cantrip/i.test(block)) levelOut = 'cantrip';
+  }
+
+  // Find school if empty
+  if (!school) {
+    const sm = block.match(/\b(abjuration|conjuration|divination|enchantment|evocation|illusion|necromancy|transmutation)\b/i);
+    if (sm) school = sm[1];
+  }
+
+  const concentration = /concentration/i.test(duration || '');
+
+  return {
+    name: name,
+    level: levelOut,
+    school: school || '',
+    castingTime: castingTime || '1 action',
+    range: range || 'Touch',
+    components: components || 'V, S',
+    duration: duration || 'Instantaneous',
+    concentration,
+    description: (description || '').replace(/"[^"]*"$/s, '').trim()
+  };
+}
 
   // MODE B: Legacy heuristic parsing
   const name = (lines[0] || '').trim();
@@ -3588,6 +3628,7 @@ if ('serviceWorker' in navigator) {
     .then(reg => console.log('SW registered'))
     .catch(err => console.log('SW failed:', err));
 }
+
 
 </script>
 </body>
