@@ -40,11 +40,8 @@ body {
 }
 /* ======== THEME VARS ======== */
 :root{
-  --spell-row-min-h: 72px;    /* min height per spell row */
-  --spell-collapsed-h: 36px;  /* header-only collapsed section height */
-
-  --spell-row-min-h: 72px; /* min height per spell row for 2-visible-rows calc */
-
+  --spell-row-min-h: 56px;    /* compact row height (was 72px) */
+  --spell-collapsed-h: 34px;  /* slim header height when collapsed */
   --topbar-h: 30px;
 
 /* Portrait (borderless) */
@@ -913,18 +910,31 @@ textarea{ min-height: 80px; resize: vertical; }
 
 /* Each card auto-sizes, but we’ll control min-height on the section itself */
 .spell-grid {
-  grid-auto-rows: auto;
+  grid-auto-rows: auto;      /* let sections size themselves */
 }
 
-/* OPEN: height for exactly ~2 rows of spells + header/gap */
 .spell-section {
-  min-height: calc(var(--spell-row-min-h) * 2 + 56px);
+  display: flex;
+  flex-direction: column;
+  min-height: calc(var(--spell-row-min-h) * 2 + 52px); /* header + ~2 rows */
 }
 
-/* COLLAPSED: header-only, no list shown */
-.spell-section.collapsed {
-  min-height: var(--spell-collapsed-h);
+.spell-section h3 {
+  margin: 0 0 6px 0;
+  padding-bottom: 4px;
 }
+
+/* COLLAPSED: show only header */
+.spell-section.collapsed {
+  min-height: var(--spell-collapsed-h) !important;
+  height: var(--spell-collapsed-h) !important;
+  overflow: hidden !important;
+}
+
+.spell-section.collapsed .spell-list {
+  display: none !important;
+}
+
 
 
 /* Make the inner list scroll nicely on iOS and allow vertical panning */
@@ -937,12 +947,14 @@ textarea{ min-height: 80px; resize: vertical; }
 /* Small screens: a touch more height so 2–3 items are visible */
 @media (max-width: 480px) {
   .spell-section {
-    min-height: calc(var(--spell-row-min-h) * 2 + 64px);
+    min-height: calc(var(--spell-row-min-h) * 2 + 58px);
   }
   .spell-section.collapsed {
-    min-height: var(--spell-collapsed-h);
+    min-height: var(--spell-collapsed-h) !important;
+    height: var(--spell-collapsed-h) !important;
   }
 }
+
 
 
 
@@ -998,21 +1010,23 @@ textarea{ min-height: 80px; resize: vertical; }
 }
 
 
+
 .spell-item {
   background: rgba(0,0,0,0.4);
   border: 1px solid #555;
   border-radius: 4px;
-  padding: 6px 40px 6px 8px; /* keep space for indicators */
+  padding: 6px 36px 6px 8px; /* keep space for indicators */
   cursor: pointer;
   position: relative;
-  line-height: 1.25;
   display: grid;
   grid-template-columns: 1fr auto; /* left: name/school, right: button */
-  grid-auto-rows: auto;
-  gap: 4px 10px;
+  gap: 2px 8px;
   align-items: start;
   min-height: var(--spell-row-min-h);
+  font-size: 10px;           /* compact base */
+  line-height: 1.2;
 }
+
 
 
 
@@ -1023,20 +1037,22 @@ textarea{ min-height: 80px; resize: vertical; }
 
 .spell-name {
   font-weight: 600;
+  font-size: 11px; /* explicit compact */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .spell-school {
-  font-size: 10px;
+  font-size: 9px;
   opacity: 0.75;
-  margin-top: 2px;
+  margin-top: 0;
 }
+
 
 .spell-show-btn {
   font-size: 10px;
-  padding: 4px 8px;
+  padding: 3px 8px;
   border-radius: 4px;
   border: 1px solid #3c311c;
   background: linear-gradient(#26231e, #1b1916);
@@ -1044,6 +1060,7 @@ textarea{ min-height: 80px; resize: vertical; }
   cursor: pointer;
   touch-action: manipulation;
 }
+
 
 .spell-desc {
   grid-column: 1 / -1;     /* span both columns */
@@ -1499,6 +1516,16 @@ textarea{ min-height: 80px; resize: vertical; }
   </form>
 </dialog>
 
+<!-- Read-only Spell Text Dialog -->
+<dialog id="spellTextDialog">
+  <h3 id="spellTextTitle">Spell</h3>
+  <div id="spellTextBody" style="font-size: 12px; line-height: 1.4; white-space: pre-wrap;"></div>
+  <div class="actions" style="margin-top: 12px; display:flex; justify-content:flex-end; gap:8px;">
+    <button type="button" class="btn" id="closeSpellTextBtn">Close</button>
+  </div>
+</dialog>
+
+
 <script>
 /* ---------- ICON PATHS ---------- */
 const ICON_RUNE  = "assets/Rune02Loop_01_04_Regular_Purple_400x400.webm";
@@ -1944,6 +1971,7 @@ document.getElementById('saveBtn').addEventListener('click', () => {
 });
 
 /* Spellbook: collapsible categories + per-spell Show Text toggle (event delegation) */
+/* Spellbook: category collapse + read-only description modal (delegated) */
 document.addEventListener('click', (e) => {
   // Collapse/expand category by tapping its header
   const h3 = e.target.closest('.spell-section > h3');
@@ -1952,17 +1980,35 @@ document.addEventListener('click', (e) => {
     return;
   }
 
-  // Toggle description for a spell (don’t open edit dialog)
+  // Open read-only description modal
   const showBtn = e.target.closest('.spell-show-btn');
   if (showBtn) {
+    e.preventDefault();
     e.stopPropagation();
+    e.stopImmediatePropagation();
+
     const item = showBtn.closest('.spell-item');
     if (!item) return;
-    const isOpen = item.classList.toggle('open');
-    showBtn.textContent = isOpen ? 'Hide text' : 'Show text';
+
+    const title = item.dataset.spellName || 'Spell';
+    const body = item.dataset.description || 'No description available.';
+
+    const dlg = document.getElementById('spellTextDialog');
+    document.getElementById('spellTextTitle').textContent = title;
+    document.getElementById('spellTextBody').textContent = body;
+
+    // Open read-only dialog (works with your dialog fallback too)
+    try { dlg.showModal(); } catch { dlg.setAttribute('open',''); }
     return;
   }
 });
+
+// Close button for text dialog
+document.getElementById('closeSpellTextBtn')?.addEventListener('click', () => {
+  const dlg = document.getElementById('spellTextDialog');
+  try { dlg.close(); } catch { dlg.removeAttribute('open'); }
+});
+
 
 
 
@@ -3230,13 +3276,16 @@ function updateSpellElement(element, spellData) {
   const subtitle = school ? `${school} • ${levelLabel}` : levelLabel;
   const description = (spellData.description || '').trim();
 
+  // store full text for the modal
+  element.dataset.description = description;
+  element.dataset.spellName = spellData.name;
+
   element.innerHTML = `
     <div>
       <div class="spell-name">${spellData.name}</div>
       <div class="spell-school">${subtitle}</div>
     </div>
     <button type="button" class="spell-show-btn">Show text</button>
-    <div class="spell-desc">${description ? description.replace(/\n/g, '<br>') : ''}</div>
     <div class="spell-indicators">${indicators}</div>
   `;
 }
