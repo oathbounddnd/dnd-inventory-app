@@ -1486,10 +1486,20 @@ const installBtn = document.getElementById('installBtn');
 
 // Only show the button when browser says we're installable
 window.addEventListener('beforeinstallprompt', (e) => {
+  console.log('[PWA] Install prompt available');
   e.preventDefault(); // prevent auto mini-infobar
   deferredInstallPrompt = e;
-  if (installBtn) installBtn.style.display = 'inline-grid';
+  if (installBtn) {
+    installBtn.style.display = 'inline-grid';
+    console.log('[PWA] Install button shown');
+  }
 });
+
+// Debug: Check if already installed
+if (window.matchMedia('(display-mode: standalone)').matches) {
+  console.log('[PWA] Already running as installed app');
+  if (installBtn) installBtn.style.display = 'none';
+}
 
 // Handle click to trigger prompt
 installBtn?.addEventListener('click', async () => {
@@ -2200,10 +2210,15 @@ document.addEventListener('click', function(e){
 
 
 
-// Close button for text dialog
-document.getElementById('closeSpellTextBtn')?.addEventListener('click', () => {
-  const dlg = document.getElementById('spellTextDialog');
-  try { dlg.close(); } catch { dlg.removeAttribute('open'); }
+// Ensure spell text dialog exists and close button works
+document.addEventListener('DOMContentLoaded', () => {
+  const closeBtn = document.getElementById('closeSpellTextBtn');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => {
+      const dlg = document.getElementById('spellTextDialog');
+      try { dlg.close(); } catch { dlg.removeAttribute('open'); }
+    });
+  }
 });
 
 
@@ -3593,15 +3608,29 @@ function getSpellIndicators(spellData) {
 if ('serviceWorker' in navigator) {
   const isHttps = location.protocol === 'https:';
   const isLocalhost = ['localhost','127.0.0.1'].includes(location.hostname);
-  const inGhPagesScope = location.pathname.startsWith('/dnd-inventory-app/');
-
-  // On GH Pages use absolute project path; elsewhere use relative
-  const swPath  = inGhPagesScope ? '/dnd-inventory-app/service-worker.js' : './service-worker.js';
-  const swScope = inGhPagesScope ? '/dnd-inventory-app/' : './';
+  
+  // Detect GitHub Pages more reliably
+  const isGitHubPages = location.hostname.includes('github.io');
+  const pathParts = location.pathname.split('/').filter(p => p);
+  const repoName = isGitHubPages && pathParts.length > 0 ? pathParts[0] : null;
+  
+  // Set paths
+  let swPath, swScope;
+  if (isGitHubPages && repoName) {
+    swPath = `/${repoName}/service-worker.js`;
+    swScope = `/${repoName}/`;
+  } else {
+    swPath = './service-worker.js';
+    swScope = './';
+  }
 
   if (isHttps || isLocalhost) {
     navigator.serviceWorker.register(swPath, { scope: swScope })
-      .then(reg => console.log('[SW] registered:', reg.scope))
+      .then(reg => {
+        console.log('[SW] registered:', reg.scope);
+        // Check for updates periodically
+        setInterval(() => reg.update(), 60000);
+      })
       .catch(err => console.log('[SW] failed:', err));
   } else {
     console.log('[SW] not registered (non-https & not localhost).');
