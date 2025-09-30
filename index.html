@@ -2149,16 +2149,7 @@ document.addEventListener('click', function(e) {
     openSpellDlg();
   }
 
-  // OPTIONAL: Auto Fill click (no-op if you wire later)
-  if (autoFillBtn) {
-    autoFillBtn.addEventListener('click', function(){
-      // placeholder – keep button from doing nothing silently
-      // You can wire your fetch/autofill here if desired.
-      // For now, just focus the name field to hint action.
-      var nameEl = document.getElementById('spellName');
-      if (nameEl) nameEl.focus();
-    });
-  }
+
 })();
 
 
@@ -2631,57 +2622,60 @@ document.getElementById('rationsIndicator').addEventListener('click', () => {
 });
 
 // ==== Spellbook navigation (open from indicator or the topbar button; back returns) ====
-const spellbookPage = document.getElementById('spellbookPage');
-const inventoryScreen = document.querySelector('main.screen');
-const spellbookIndicatorEl = document.getElementById('spellbookIndicator');
-const backToInventoryBtn = document.getElementById('backToInventoryBtn');
-const openSpellbookBtn = document.getElementById('openSpellbookBtn');
+(() => {
+  // Guard so this block only wires once even if the script is evaluated twice
+  if (window.__wiredSpellbookNav) return;
+  window.__wiredSpellbookNav = true;
 
-function openSpellbook() {
-  console.log('[Spellbook] Opening spellbook view');
-  if (spellbookPage) spellbookPage.style.display = 'block';
-  if (inventoryScreen) inventoryScreen.style.display = 'none';
-  // Accessibility focus hint (optional)
-  const firstHeader = spellbookPage?.querySelector('.spell-section h3');
-  firstHeader?.focus?.();
-}
+  const spellbookPage      = document.getElementById('spellbookPage');
+  const inventoryScreen    = document.querySelector('main.screen');
+  const spellbookIndicator = document.getElementById('spellbookIndicator');
+  const backBtn            = document.getElementById('backToInventoryBtn');
+  const openBtn            = document.getElementById('openSpellbookBtn');
 
-function closeSpellbook() {
-  console.log('[Spellbook] Closing spellbook view');
-  if (spellbookPage) spellbookPage.style.display = 'none';
-  if (inventoryScreen) inventoryScreen.style.display = '';
-}
+  function openSpellbook() {
+    console.log('[Spellbook] Opening spellbook view');
+    if (spellbookPage) spellbookPage.style.display = 'block';
+    if (inventoryScreen) inventoryScreen.style.display = 'none';
+    spellbookPage?.querySelector('.spell-section h3')?.focus?.();
+  }
 
-if (spellbookIndicatorEl) {
-  spellbookIndicatorEl.addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    openSpellbook();
-  });
-  // Also allow keyboard users to toggle via Enter/Space (if it’s focusable)
-  spellbookIndicatorEl.setAttribute('tabindex', '0');
-  spellbookIndicatorEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
+  function closeSpellbook() {
+    console.log('[Spellbook] Closing spellbook view');
+    if (spellbookPage) spellbookPage.style.display = 'none';
+    if (inventoryScreen) inventoryScreen.style.display = '';
+  }
+
+  if (openBtn) {
+    openBtn.addEventListener('click', (e) => {
       e.preventDefault();
+      e.stopPropagation();
       openSpellbook();
-    }
-  });
-}
+    });
+  }
 
-if (openSpellbookBtn) {
-  openSpellbookBtn.addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    openSpellbook();
-  });
-}
+  if (spellbookIndicator) {
+    spellbookIndicator.setAttribute('tabindex', '0');
+    spellbookIndicator.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openSpellbook();
+    });
+    spellbookIndicator.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openSpellbook();
+      }
+    });
+  }
 
-if (backToInventoryBtn) {
-  backToInventoryBtn.addEventListener('click', (e) => {
-    e.preventDefault();
-    closeSpellbook();
-  });
-}
+  if (backBtn) {
+    backBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      closeSpellbook();
+    });
+  }
+})();
 
 
 
