@@ -3595,7 +3595,7 @@ if ('serviceWorker' in navigator) {
   const isLocalhost = ['localhost','127.0.0.1'].includes(location.hostname);
   const inGhPagesScope = location.pathname.startsWith('/dnd-inventory-app/');
 
-  // Prefer GH Pages path when hosted there; otherwise use relative
+  // On GH Pages use absolute project path; elsewhere use relative
   const swPath  = inGhPagesScope ? '/dnd-inventory-app/service-worker.js' : './service-worker.js';
   const swScope = inGhPagesScope ? '/dnd-inventory-app/' : './';
 
@@ -3607,6 +3607,7 @@ if ('serviceWorker' in navigator) {
     console.log('[SW] not registered (non-https & not localhost).');
   }
 }
+
 
 
 
