@@ -2762,10 +2762,41 @@ async function searchSpellFiles(spellName) {
       // Read text file
       const textData = await window.fs.readFile(filePath, { encoding: 'utf8' });
       
-      // Search for spell in text
-      const spellData = parseSpellFromText(textData, spellName);
-      if (spellData) {
-        return spellData;
+async function searchSpellFiles(spellName) {
+  const spellFiles = [
+    'Spell1.txt',
+    'Spell2.txt', 
+    'Spell3.txt',
+    'Spell4.txt'
+  ];
+
+  const searchLower = spellName.toLowerCase().trim();
+  console.log('Searching for spell:', searchLower);
+
+  for (const filePath of spellFiles) {
+    try {
+      const response = await fetch(filePath);
+      if (response.ok) {
+        const textData = await response.text();
+        console.log(`Searching in ${filePath}...`);
+        
+        // Split file into individual spells
+        const spells = splitIntoSpells(textData);
+        console.log(`Found ${spells.length} spell blocks in ${filePath}`);
+        
+        // Search through each spell block
+        for (const spellBlock of spells) {
+          const firstLine = spellBlock.split('\n')[0].trim().toLowerCase();
+          console.log('Checking spell:', firstLine);
+          
+          if (firstLine === searchLower) {
+            console.log('MATCH FOUND!');
+            const spellData = parseSpellBlock(spellBlock);
+            if (spellData) {
+              return spellData;
+            }
+          }
+        }
       }
     } catch (error) {
       console.log(`Failed to search ${filePath}:`, error);
@@ -2773,6 +2804,102 @@ async function searchSpellFiles(spellName) {
   }
   return null;
 }
+
+// Split text file into individual spell blocks
+function splitIntoSpells(textContent) {
+  const spells = [];
+  const lines = textContent.split('\n');
+  let currentSpell = [];
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    
+    // Check if this line looks like a spell name (followed by "Casting Time:")
+    if (line.length > 0 && i + 1 < lines.length) {
+      const nextLine = lines[i + 1].trim();
+      if (nextLine.match(/^Casting\s+Time:/i)) {
+        // Save previous spell if exists
+        if (currentSpell.length > 0) {
+          spells.push(currentSpell.join('\n'));
+        }
+        // Start new spell
+        currentSpell = [line];
+        continue;
+      }
+    }
+    
+    // Add line to current spell
+    if (currentSpell.length > 0) {
+      currentSpell.push(lines[i]);
+    }
+  }
+  
+  // Add last spell
+  if (currentSpell.length > 0) {
+    spells.push(currentSpell.join('\n'));
+  }
+  
+  return spells;
+}
+
+// Parse a single spell block
+function parseSpellBlock(spellBlock) {
+  const lines = spellBlock.split('\n');
+  const spellName = lines[0].trim();
+  
+  console.log('Parsing spell block for:', spellName);
+  
+  const castingTimeMatch = spellBlock.match(/Casting\s+Time:\s*([^\n]+)/i);
+  const rangeMatch = spellBlock.match(/Range:\s*([^\n]+)/i);
+  const componentsMatch = spellBlock.match(/Components:\s*([^\n]+)/i);
+  const durationMatch = spellBlock.match(/Duration:\s*([^\n]+)/i);
+  
+  // Find where description starts (after Duration line)
+  let description = '';
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].match(/^Duration:/i)) {
+      // Description is everything after this line
+      description = lines.slice(i + 1).join('\n').trim();
+      // Remove quoted flavor text
+      description = description.replace(/"[^"]*"$/s, '').trim();
+      break;
+    }
+  }
+  
+  // Try to determine level and school
+  let level = '1';
+  let school = '';
+  
+  // Look in first few lines for level/school info
+  const headerText = lines.slice(0, 5).join(' ');
+  const levelMatch = headerText.match(/(\d+)(?:st|nd|rd|th)[\s-]level/i);
+  if (levelMatch) {
+    level = levelMatch[1];
+  } else if (/cantrip/i.test(headerText)) {
+    level = 'cantrip';
+  }
+  
+  const schoolMatch = headerText.match(/\b(abjuration|conjuration|divination|enchantment|evocation|illusion|necromancy|transmutation)\b/i);
+  if (schoolMatch) {
+    school = schoolMatch[1];
+  }
+  
+  const concentration = /concentration/i.test(durationMatch ? durationMatch[1] : '');
+  
+  return {
+    name: spellName,
+    level: level,
+    school: school,
+    castingTime: castingTimeMatch ? castingTimeMatch[1].trim() : '1 action',
+    range: rangeMatch ? rangeMatch[1].trim() : 'Touch',
+    components: componentsMatch ? componentsMatch[1].trim() : 'V, S',
+    duration: durationMatch ? durationMatch[1].trim() : 'Instantaneous',
+    concentration: concentration,
+    description: description
+  };
+}
+
+
 // No longer needed - we read text files directly
 
 // Fallback database for common spells
