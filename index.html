@@ -1975,26 +1975,8 @@ document.addEventListener('click', function(e) {
   }
 }, false);
 
-/* Helper: open read-only spell text dialog from a specific row */
-function openSpellTextModal(title, body) {
-  var dlg = document.getElementById('spellTextDialog');
-  if (!dlg) {
-    dlg = document.createElement('dialog');
-    dlg.id = 'spellTextDialog';
-    dlg.innerHTML = ''
-      + '<h3 id="spellTextTitle">Spell</h3>'
-      + '<div id="spellTextBody" style="font-size: 12px; line-height: 1.4; white-space: pre-wrap;"></div>'
-      + '<div class="actions" style="margin-top: 12px; display:flex; justify-content:flex-end; gap:8px;">'
-      + '  <button type="button" class="btn" id="closeSpellTextBtn">Close</button>'
-      + '</div>';
-    document.body.appendChild(dlg);
-    var closeBtn = dlg.querySelector('#closeSpellTextBtn');
-    if (closeBtn) {
-      closeBtn.addEventListener('click', function(){
-        try { dlg.close(); } catch (err) { dlg.removeAttribute('open'); }
-      });
-    }
-  }
+/* (deduped) helper removed here – a single unified openSpellTextModal() is defined later */
+
 
   document.getElementById('spellTextTitle').textContent = title || 'Spell';
   document.getElementById('spellTextBody').textContent  = body || 'No description available.';
@@ -2200,6 +2182,21 @@ function openSpellTextModal(title, body) {
   // Open with native dialog API, fallback to attribute.
   try { dlg.showModal(); } catch { dlg.setAttribute('open',''); }
 }
+
+
+// Capture-phase delegated handler: guarantees the "Show text" button opens the dialog
+document.addEventListener('click', function(e){
+  const btn = e.target && e.target.closest ? e.target.closest('.spell-show-btn') : null;
+  if (!btn) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const row = btn.closest('.spell-item');
+  if (!row) return;
+  openSpellTextModal(
+    row.dataset.spellName || 'Spell',
+    row.dataset.description || 'No description available.'
+  );
+}, true);
 
 
 
@@ -3595,19 +3592,22 @@ function getSpellIndicators(spellData) {
 
 if ('serviceWorker' in navigator) {
   const isHttps = location.protocol === 'https:';
-  const isLocalhost = ['localhost', '127.0.0.1'].includes(location.hostname);
+  const isLocalhost = ['localhost','127.0.0.1'].includes(location.hostname);
   const inGhPagesScope = location.pathname.startsWith('/dnd-inventory-app/');
 
-  if (isHttps && inGhPagesScope) {
-    navigator.serviceWorker.register('/dnd-inventory-app/service-worker.js', { scope: '/dnd-inventory-app/' })
-      .then(reg => console.log('SW registered with scope', reg.scope))
-      .catch(err => console.log('SW failed:', err));
-  } else if (isLocalhost) {
-    console.log('SW: dev/local environment detected; skipping registration.');
+  // Prefer GH Pages path when hosted there; otherwise use relative
+  const swPath  = inGhPagesScope ? '/dnd-inventory-app/service-worker.js' : './service-worker.js';
+  const swScope = inGhPagesScope ? '/dnd-inventory-app/' : './';
+
+  if (isHttps || isLocalhost) {
+    navigator.serviceWorker.register(swPath, { scope: swScope })
+      .then(reg => console.log('[SW] registered:', reg.scope))
+      .catch(err => console.log('[SW] failed:', err));
   } else {
-    console.log('SW not registered on this origin/path:', location.origin + location.pathname);
+    console.log('[SW] not registered (non-https & not localhost).');
   }
 }
+
 
 
 
