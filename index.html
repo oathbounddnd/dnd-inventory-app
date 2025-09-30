@@ -1962,9 +1962,8 @@ document.getElementById('saveBtn').addEventListener('click', () => {
 });
 
 
-/* Spellbook: category collapse + read-only description modal (delegated, plain JS) */
+/* Spellbook: delegated header collapse ONLY (keep simple/bubbly) */
 document.addEventListener('click', function(e) {
-  // Collapse/expand category by tapping its header
   var header = e.target && e.target.closest ? e.target.closest('h3') : null;
   if (header && header.parentElement && header.parentElement.classList.contains('spell-section')) {
     e.preventDefault();
@@ -1974,46 +1973,33 @@ document.addEventListener('click', function(e) {
     header.setAttribute('aria-expanded', String(!nowCollapsed));
     return;
   }
-
-  // Open read-only description modal
-  var showBtn = e.target && e.target.closest ? e.target.closest('.spell-show-btn') : null;
-  if (showBtn) {
-    e.preventDefault();
-    e.stopPropagation();
-
-    var item = showBtn.closest('.spell-item');
-    if (!item) return;
-
-    var title = item.dataset.spellName || 'Spell';
-    var body  = item.dataset.description || 'No description available.';
-
-    // Ensure the dialog exists; create if missing
-    var dlg = document.getElementById('spellTextDialog');
-    if (!dlg) {
-      dlg = document.createElement('dialog');
-      dlg.id = 'spellTextDialog';
-      dlg.innerHTML = ''
-        + '<h3 id="spellTextTitle">Spell</h3>'
-        + '<div id="spellTextBody" style="font-size: 12px; line-height: 1.4; white-space: pre-wrap;"></div>'
-        + '<div class="actions" style="margin-top: 12px; display:flex; justify-content:flex-end; gap:8px;">'
-        + '  <button type="button" class="btn" id="closeSpellTextBtn">Close</button>'
-        + '</div>';
-      document.body.appendChild(dlg);
-      var closeBtn = dlg.querySelector('#closeSpellTextBtn');
-      if (closeBtn) {
-        closeBtn.addEventListener('click', function(){
-          try { dlg.close(); } catch (err) { dlg.removeAttribute('open'); }
-        });
-      }
-    }
-
-    document.getElementById('spellTextTitle').textContent = title;
-    document.getElementById('spellTextBody').textContent  = body;
-
-    try { dlg.showModal(); } catch (err) { dlg.setAttribute('open',''); }
-    return;
-  }
 }, false);
+
+/* Helper: open read-only spell text dialog from a specific row */
+function openSpellTextModal(title, body) {
+  var dlg = document.getElementById('spellTextDialog');
+  if (!dlg) {
+    dlg = document.createElement('dialog');
+    dlg.id = 'spellTextDialog';
+    dlg.innerHTML = ''
+      + '<h3 id="spellTextTitle">Spell</h3>'
+      + '<div id="spellTextBody" style="font-size: 12px; line-height: 1.4; white-space: pre-wrap;"></div>'
+      + '<div class="actions" style="margin-top: 12px; display:flex; justify-content:flex-end; gap:8px;">'
+      + '  <button type="button" class="btn" id="closeSpellTextBtn">Close</button>'
+      + '</div>';
+    document.body.appendChild(dlg);
+    var closeBtn = dlg.querySelector('#closeSpellTextBtn');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', function(){
+        try { dlg.close(); } catch (err) { dlg.removeAttribute('open'); }
+      });
+    }
+  }
+
+  document.getElementById('spellTextTitle').textContent = title || 'Spell';
+  document.getElementById('spellTextBody').textContent  = body || 'No description available.';
+  try { dlg.showModal(); } catch (err) { dlg.setAttribute('open',''); }
+}
 
 
 
@@ -3543,7 +3529,21 @@ function updateSpellElement(element, spellData) {
     + '</div>'
     + '<button type="button" class="spell-show-btn">Show text</button>'
     + '<div class="spell-indicators">' + indicators + '</div>';
+
+  // Wire the button directly (don’t rely on delegated bubbling)
+  var btn = element.querySelector('.spell-show-btn');
+  if (btn) {
+    btn.addEventListener('click', function(ev) {
+      ev.preventDefault();
+      ev.stopPropagation(); // keep the row’s click (Edit) from triggering
+      openSpellTextModal(
+        element.dataset.spellName || 'Spell',
+        element.dataset.description || 'No description available.'
+      );
+    });
+  }
 }
+
 
 
 
