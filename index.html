@@ -334,6 +334,40 @@ body {
   color: var(--muted);
   overflow: hidden;
 }
+
+.slot-container {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: var(--wearable-width);
+}
+
+.slot-nav {
+  width: 12px;
+  height: var(--wearable-height);
+  background: var(--slot-bg);
+  border: 1px solid var(--slot-border-color);
+  border-radius: 3px;
+  color: var(--accent-gold);
+  font-size: 8px;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: manipulation;
+  flex-shrink: 0;
+}
+
+.slot-nav:active {
+  background: rgba(212, 175, 55, 0.2);
+}
+
+.slot-container .slot {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
 .slot:empty::before{ 
   content: attr(data-label); 
   font-size: 10px; 
@@ -1112,7 +1146,16 @@ textarea{ min-height: 80px; resize: vertical; }
         <div class="slot" data-label="Belt"        data-slot="belt"></div>
         <div class="slot" data-label="Trousers"    data-slot="trousers"></div>
         <div class="slot" data-label="Boots"       data-slot="boots"></div>
-        <div class="slot" data-label="Rings"       data-slot="rings"></div>
+        <div class="slot-container">
+          <button class="slot-nav slot-nav-left" data-nav-slot="rings" style="display:none;">◀</button>
+          <div class="slot" data-label="Rings" data-slot="rings"></div>
+          <button class="slot-nav slot-nav-right" data-nav-slot="rings" style="display:none;">▶</button>
+        </div>
+        <div class="slot-container">
+          <button class="slot-nav slot-nav-left" data-nav-slot="amulet" style="display:none;">◀</button>
+          <div class="slot" data-label="Amulet" data-slot="amulet"></div>
+          <button class="slot-nav slot-nav-right" data-nav-slot="amulet" style="display:none;">▶</button>
+        </div>
 <div class="slot" data-label="Amulet"      data-slot="amulet"></div>
         </div>
         
@@ -2467,11 +2510,14 @@ function currentUnits(zone){
 function canAccept(zone, data){
   if(!data) return false;
 
-  if(zone.classList.contains('slot')){
-    const isRings = zone.dataset.slot === 'rings';
-    if(isRings) return zone.querySelectorAll('.item').length < 5;
+if(zone.classList.contains('slot')){
+    const slotType = zone.dataset.slot;
+    // Rings and Amulet can hold unlimited items (with carousel)
+    if(slotType === 'rings' || slotType === 'amulet') return true;
+    // Other slots: only 1 item
     return zone.querySelectorAll('.item').length === 0;
   }
+
   if(zone.classList.contains('wslot')){
     if(zone.children.length > 0) return false;
     if(zone.dataset.weapon === 'misc' && data.size === 'Large') return false;
@@ -2661,6 +2707,97 @@ document.querySelectorAll('.lock').forEach(btn => {
 
 // Load saved lock states on page load
 loadLockState();
+
+/* ========== SLOT CAROUSEL (Rings & Amulet) ========== */
+const slotCarouselState = new Map(); // slotName -> currentIndex
+
+function updateSlotCarousel(slotName) {
+  const container = document.querySelector(`[data-nav-slot="${slotName}"]`)?.closest('.slot-container');
+  if (!container) return;
+  
+  const slot = container.querySelector('.slot');
+  const leftBtn = container.querySelector('.slot-nav-left');
+  const rightBtn = container.querySelector('.slot-nav-right');
+  const allItems = Array.from(slot.querySelectorAll('.item'));
+  
+  if (allItems.length <= 1) {
+    // Hide arrows if 0-1 items
+    leftBtn.style.display = 'none';
+    rightBtn.style.display = 'none';
+    allItems.forEach(item => item.style.display = '');
+    return;
+  }
+  
+  // Show arrows
+  leftBtn.style.display = 'flex';
+  rightBtn.style.display = 'flex';
+  
+  // Get/initialize current index
+  if (!slotCarouselState.has(slotName)) {
+    slotCarouselState.set(slotName, 0);
+  }
+  
+  const currentIndex = slotCarouselState.get(slotName);
+  
+  // Show only current item
+  allItems.forEach((item, i) => {
+    item.style.display = i === currentIndex ? '' : 'none';
+  });
+}
+
+function navigateSlot(slotName, direction) {
+  const container = document.querySelector(`[data-nav-slot="${slotName}"]`)?.closest('.slot-container');
+  if (!container) return;
+  
+  const slot = container.querySelector('.slot');
+  const allItems = Array.from(slot.querySelectorAll('.item'));
+  
+  if (allItems.length <= 1) return;
+  
+  let currentIndex = slotCarouselState.get(slotName) || 0;
+  currentIndex = (currentIndex + direction + allItems.length) % allItems.length;
+  slotCarouselState.set(slotName, currentIndex);
+  
+  updateSlotCarousel(slotName);
+  scheduleSave();
+}
+
+// Wire up navigation buttons
+document.querySelectorAll('.slot-nav').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const slotName = btn.dataset.navSlot;
+    const direction = btn.classList.contains('slot-nav-left') ? -1 : 1;
+    navigateSlot(slotName, direction);
+  });
+});
+
+// Update carousels whenever items change
+const originalWireItem = wireItem;
+wireItem = function(el) {
+  originalWireItem(el);
+  
+  // After any drag/drop, update carousels
+  const originalCleanup = el.__cleanupDrag;
+  el.addEventListener('mouseup', () => {
+    setTimeout(() => {
+      updateSlotCarousel('rings');
+      updateSlotCarousel('amulet');
+    }, 50);
+  });
+  el.addEventListener('touchend', () => {
+    setTimeout(() => {
+      updateSlotCarousel('rings');
+      updateSlotCarousel('amulet');
+    }, 50);
+  });
+};
+
+// Initialize carousels on load
+setTimeout(() => {
+  updateSlotCarousel('rings');
+  updateSlotCarousel('amulet');
+}, 200);
 
 // Simple Rations Management
 const rationsDialog = document.getElementById('rationsDialog');
