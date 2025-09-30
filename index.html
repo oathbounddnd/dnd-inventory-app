@@ -2169,6 +2169,37 @@ function openSpellTextModal(title, body) {
 })();
 
 
+// Small helper that opens the read-only spell text dialog reliably on all browsers.
+function openSpellTextModal(title, body) {
+  let dlg = document.getElementById('spellTextDialog');
+  // If for any reason the dialog isn't in the DOM, create it once.
+  if (!dlg) {
+    dlg = document.createElement('dialog');
+    dlg.id = 'spellTextDialog';
+    dlg.innerHTML = ''
+      + '<h3 id="spellTextTitle">Spell</h3>'
+      + '<div id="spellTextBody" style="font-size: 12px; line-height: 1.4; white-space: pre-wrap;"></div>'
+      + '<div class="actions" style="margin-top: 12px; display:flex; justify-content:flex-end; gap:8px;">'
+      + '  <button type="button" class="btn" id="closeSpellTextBtn">Close</button>'
+      + '</div>';
+    document.body.appendChild(dlg);
+    const closeBtn = dlg.querySelector('#closeSpellTextBtn');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', function(){
+        try { dlg.close(); } catch { dlg.removeAttribute('open'); }
+      });
+    }
+  }
+
+  // Fill content
+  const titleEl = document.getElementById('spellTextTitle');
+  const bodyEl  = document.getElementById('spellTextBody');
+  if (titleEl) titleEl.textContent = title || 'Spell';
+  if (bodyEl)  bodyEl.textContent  = body  || 'No description available.';
+
+  // Open with native dialog API, fallback to attribute.
+  try { dlg.showModal(); } catch { dlg.setAttribute('open',''); }
+}
 
 
 
@@ -3497,17 +3528,11 @@ function createSpellElement(spellData, id) {
     if (typeof openEditSpellDialog === 'function') openEditSpellDialog(id);
   });
 
-  // Guard: prevent Show text clicks from bubbling to the row
-  element.addEventListener('click', function(ev) {
-    var t = ev.target;
-    if (t && t.closest && t.closest('.spell-show-btn')) {
-      ev.stopPropagation();
-    }
-  }, true);
-
+  // (No capture-phase stopPropagation here; see button handler in updateSpellElement)
   updateSpellElement(element, spellData);
   return element;
 }
+
 
 
 
@@ -3518,7 +3543,7 @@ function updateSpellElement(element, spellData) {
   var subtitle = school ? (school + ' • ' + levelLabel) : levelLabel;
   var description = (spellData.description || '').trim();
 
-  // store full text for the modal
+  // store full text for the modal (used by the button handler)
   element.dataset.description = description;
   element.dataset.spellName = spellData.name;
 
@@ -3530,12 +3555,12 @@ function updateSpellElement(element, spellData) {
     + '<button type="button" class="spell-show-btn">Show text</button>'
     + '<div class="spell-indicators">' + indicators + '</div>';
 
-  // Wire the button directly (don’t rely on delegated bubbling)
+  // Direct button handler (works regardless of any delegated listeners)
   var btn = element.querySelector('.spell-show-btn');
   if (btn) {
     btn.addEventListener('click', function(ev) {
       ev.preventDefault();
-      ev.stopPropagation(); // keep the row’s click (Edit) from triggering
+      ev.stopPropagation(); // prevent the row click (which opens Edit)
       openSpellTextModal(
         element.dataset.spellName || 'Spell',
         element.dataset.description || 'No description available.'
@@ -3543,11 +3568,6 @@ function updateSpellElement(element, spellData) {
     });
   }
 }
-
-
-
-
-
 
 
 function getSpellIndicators(spellData) {
