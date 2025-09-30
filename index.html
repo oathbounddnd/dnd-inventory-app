@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>D&D Inventory (Mobile)</title>
+<link rel="icon" href="assets/Background.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
@@ -1081,6 +1082,8 @@ textarea{ min-height: 80px; resize: vertical; }
       <input type="text" id="searchBox" placeholder="Search items..." style="display:none; width: 120px; font-size: 10px; padding: 4px; border-radius: 4px; background: var(--slot-bg); color: var(--text); border: var(--slot-border);">
       <button class="btn-plus" id="searchBtn" aria-label="Search Items" style="width: 24px; height: 24px; font-size: 14px;">🔍</button>
 <button class="btn-plus" id="saveBtn" aria-label="Save Data" style="width: 24px; height: 24px; font-size: 12px;" title="Manual Save">💾</button>
+<button class="btn-plus" id="openSpellbookBtn" aria-label="Open Spellbook" title="Open Spellbook" style="width: 28px; height: 28px; font-size: 14px;">📖</button>
+
     </div>
     <div></div>
 <div class="right-controls">
@@ -2626,6 +2629,60 @@ document.getElementById('rationsIndicator').addEventListener('click', () => {
   rationsDialog.showModal();
 });
 
+// ==== Spellbook navigation (open from indicator or the topbar button; back returns) ====
+const spellbookPage = document.getElementById('spellbookPage');
+const inventoryScreen = document.querySelector('main.screen');
+const spellbookIndicatorEl = document.getElementById('spellbookIndicator');
+const backToInventoryBtn = document.getElementById('backToInventoryBtn');
+const openSpellbookBtn = document.getElementById('openSpellbookBtn');
+
+function openSpellbook() {
+  console.log('[Spellbook] Opening spellbook view');
+  if (spellbookPage) spellbookPage.style.display = 'block';
+  if (inventoryScreen) inventoryScreen.style.display = 'none';
+  // Accessibility focus hint (optional)
+  const firstHeader = spellbookPage?.querySelector('.spell-section h3');
+  firstHeader?.focus?.();
+}
+
+function closeSpellbook() {
+  console.log('[Spellbook] Closing spellbook view');
+  if (spellbookPage) spellbookPage.style.display = 'none';
+  if (inventoryScreen) inventoryScreen.style.display = '';
+}
+
+if (spellbookIndicatorEl) {
+  spellbookIndicatorEl.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openSpellbook();
+  });
+  // Also allow keyboard users to toggle via Enter/Space (if it’s focusable)
+  spellbookIndicatorEl.setAttribute('tabindex', '0');
+  spellbookIndicatorEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      openSpellbook();
+    }
+  });
+}
+
+if (openSpellbookBtn) {
+  openSpellbookBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openSpellbook();
+  });
+}
+
+if (backToInventoryBtn) {
+  backToInventoryBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    closeSpellbook();
+  });
+}
+
+
 // ==== Spellbook navigation (open from indicator; back button returns) ====
 const spellbookPage = document.getElementById('spellbookPage');
 const inventoryScreen = document.querySelector('main.screen');
@@ -3510,20 +3567,23 @@ function getSpellIndicators(spellData) {
 
 
 if ('serviceWorker' in navigator) {
-  // Only register on HTTPS or localhost to avoid dev/file:// issues and 206 caching errors
-  const isSecureOrigin =
-    location.protocol === 'https:' ||
-    location.hostname === 'localhost' ||
-    location.hostname === '127.0.0.1';
+  const isHttps = location.protocol === 'https:';
+  const isLocalhost = ['localhost', '127.0.0.1'].includes(location.hostname);
+  const inGhPagesScope = location.pathname.startsWith('/dnd-inventory-app/');
 
-  if (isSecureOrigin) {
-    navigator.serviceWorker.register('./service-worker.js')
-      .then(reg => console.log('SW registered'))
+  if (isHttps && inGhPagesScope) {
+    // Register with explicit scope that matches the project site
+    navigator.serviceWorker.register('/dnd-inventory-app/service-worker.js', { scope: '/dnd-inventory-app/' })
+      .then(reg => console.log('SW registered with scope', reg.scope))
       .catch(err => console.log('SW failed:', err));
+  } else if (isLocalhost) {
+    // Local dev (optional): you can register a local SW here if you want
+    console.log('SW: dev/local environment detected; skipping registration.');
   } else {
-    console.log('SW not registered on this origin:', location.origin);
+    console.log('SW not registered on this origin/path:', location.origin + location.pathname);
   }
 }
+
 
 
 
