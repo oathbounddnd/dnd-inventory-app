@@ -40,8 +40,8 @@ body {
 }
 /* ======== THEME VARS ======== */
 :root{
-  --spell-row-min-h: 56px;    /* compact row height (was 72px) */
-  --spell-collapsed-h: 34px;  /* slim header height when collapsed */
+  --spell-row-min-h: 44px;   /* compact row height (was bigger) */
+  --spell-collapsed-h: 32px; /* slim header height when collapsed */
   --topbar-h: 30px;
 
 /* Portrait (borderless) */
@@ -898,85 +898,50 @@ textarea{ min-height: 80px; resize: vertical; }
   border-bottom: 1px solid rgba(141, 122, 82, 0.3);
 }
 
+/* === NEW, COMPACT LAYOUT + COLLAPSE === */
+:root {
+  /* add/ensure these exist once */
+  --spell-row-min-h: 44px;   /* compact row height */
+  --spell-collapsed-h: 32px; /* slim header height when collapsed */
+}
+
 .spell-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
   padding: 12px;
-  overflow-y: auto;
   overflow-x: hidden;
   flex: 1;
+  grid-auto-rows: auto; /* sections size to content/min-height */
 }
 
-/* Each card auto-sizes, but we’ll control min-height on the section itself */
-.spell-grid {
-  grid-auto-rows: auto;      /* let sections size themselves */
+@media (max-width: 768px) {
+  .spell-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 480px) {
+  .spell-grid { grid-template-columns: 1fr; gap: 6px; }
 }
 
 .spell-section {
   display: flex;
   flex-direction: column;
-  min-height: calc(var(--spell-row-min-h) * 2 + 52px); /* header + ~2 rows */
-}
-
-.spell-section h3 {
-  margin: 0 0 6px 0;
-  padding-bottom: 4px;
-}
-
-/* COLLAPSED: show only header */
-.spell-section.collapsed {
-  min-height: var(--spell-collapsed-h) !important;
-  height: var(--spell-collapsed-h) !important;
-  overflow: hidden !important;
-}
-
-.spell-section.collapsed .spell-list {
-  display: none !important;
-}
-
-
-
-/* Make the inner list scroll nicely on iOS and allow vertical panning */
-.spell-list {
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  touch-action: pan-y;
-}
-
-/* Small screens: a touch more height so 2–3 items are visible */
-@media (max-width: 480px) {
-  .spell-section {
-    min-height: calc(var(--spell-row-min-h) * 2 + 58px);
-  }
-  .spell-section.collapsed {
-    min-height: var(--spell-collapsed-h) !important;
-    height: var(--spell-collapsed-h) !important;
-  }
-}
-
-
-
-
-
-.spell-section {
+  /* header (~16px line + paddings) + TWO rows + tiny gaps */
+  min-height: calc(var(--spell-row-min-h) * 2 + 48px);
   background: var(--slot-bg);
   border: var(--slot-border);
   border-radius: 8px;
   padding: 8px;
   overflow: hidden;
-  display: flex;
-  flex-direction: column;
 }
 
 .spell-section h3 {
   font-family: 'Cinzel', serif;
   font-size: 12px;
   color: var(--accent-gold);
-  margin: 0 0 8px 0;
+  margin: 0 0 4px 0;
   text-align: center;
   border-bottom: 1px solid #8d7a52;
-  padding-bottom: 4px;
+  padding-bottom: 2px;
   cursor: pointer;
   user-select: none;
   display: flex;
@@ -984,19 +949,24 @@ textarea{ min-height: 80px; resize: vertical; }
   justify-content: center;
   gap: 6px;
 }
-
 .spell-section h3::before {
   content: '▼';
   font-size: 10px;
   transition: transform 0.2s;
 }
-
 .spell-section.collapsed h3::before {
   transform: rotate(-90deg);
 }
 
+/* COLLAPSED: show only header; no inner list; compressed box */
+.spell-section.collapsed {
+  min-height: var(--spell-collapsed-h) !important;
+  height: var(--spell-collapsed-h) !important;
+  padding-bottom: 0 !important;
+  overflow: hidden !important;
+}
 .spell-section.collapsed .spell-list {
-  display: none;
+  display: none !important;
 }
 
 .spell-list {
@@ -1007,52 +977,51 @@ textarea{ min-height: 80px; resize: vertical; }
   display: flex;
   flex-direction: column;
   gap: 4px;
+  padding: 0;
+  margin: 0;
 }
-
-
 
 .spell-item {
   background: rgba(0,0,0,0.4);
   border: 1px solid #555;
   border-radius: 4px;
-  padding: 6px 36px 6px 8px; /* keep space for indicators */
+  padding: 4px 32px 4px 8px; /* tight padding */
   cursor: pointer;
   position: relative;
   display: grid;
   grid-template-columns: 1fr auto; /* left: name/school, right: button */
-  gap: 2px 8px;
-  align-items: start;
+  gap: 0 8px;                /* no vertical gap */
+  align-items: center;       /* vertically center content */
   min-height: var(--spell-row-min-h);
-  font-size: 10px;           /* compact base */
+  font-size: 10px;
   line-height: 1.2;
 }
 
-
-
-
-.spell-item:hover {
-  background: rgba(0,0,0,0.6);
-  border-color: var(--accent-gold);
+/* left cell: compact vertical stack (name + school) */
+.spell-item > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
 }
 
 .spell-name {
   font-weight: 600;
-  font-size: 11px; /* explicit compact */
+  font-size: 11px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  margin: 0;
 }
-
 .spell-school {
   font-size: 9px;
   opacity: 0.75;
-  margin-top: 0;
+  margin: 0;
 }
-
 
 .spell-show-btn {
   font-size: 10px;
-  padding: 3px 8px;
+  line-height: 1;
+  padding: 4px 8px;
   border-radius: 4px;
   border: 1px solid #3c311c;
   background: linear-gradient(#26231e, #1b1916);
@@ -1061,31 +1030,6 @@ textarea{ min-height: 80px; resize: vertical; }
   touch-action: manipulation;
 }
 
-
-.spell-desc {
-  grid-column: 1 / -1;     /* span both columns */
-  font-size: 11px;
-  opacity: 0.95;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  display: none;            /* hidden by default */
-  margin-top: 2px;
-}
-
-/* When item has .open, show description */
-.spell-item.open .spell-desc {
-  display: block;
-}
-
-
-@media (max-width: 360px) {
-  .spell-item {
-    grid-template-columns: minmax(88px, 40%) 1fr;
-  }
-}
-
-
-
 .spell-indicators {
   position: absolute;
   top: 2px;
@@ -1093,7 +1037,6 @@ textarea{ min-height: 80px; resize: vertical; }
   display: flex;
   gap: 2px;
 }
-
 .spell-indicator {
   width: 12px;
   height: 12px;
@@ -1106,21 +1049,13 @@ textarea{ min-height: 80px; resize: vertical; }
   color: white;
 }
 
-.action { background: #d32f2f; }
-.bonus { background: #1976d2; }
-.reaction { background: #388e3c; }
-.concentration { background: #f57c00; }
-
-@media (max-width: 768px) {
-  .spell-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
 @media (max-width: 480px) {
-  .spell-grid {
-    grid-template-columns: 1fr;
-    gap: 4px;
+  .spell-section {
+    min-height: calc(var(--spell-row-min-h) * 2 + 52px);
+  }
+  .spell-section.collapsed {
+    min-height: var(--spell-collapsed-h) !important;
+    height: var(--spell-collapsed-h) !important;
   }
 }
 
@@ -1526,7 +1461,16 @@ textarea{ min-height: 80px; resize: vertical; }
 </dialog>
 
 
+
 <script>
+// <dialog> fallback (older Safari)
+if (!('HTMLDialogElement' in window) || !('showModal' in HTMLDialogElement.prototype)) {
+  document.querySelectorAll('dialog').forEach((dlg) => {
+    dlg.showModal = function(){ this.setAttribute('open',''); };
+    dlg.close = function(){ this.removeAttribute('open'); };
+  });
+}
+
 /* ---------- ICON PATHS ---------- */
 const ICON_RUNE  = "assets/Rune02Loop_01_04_Regular_Purple_400x400.webm";
 const ICON_CHAIN = "assets/MarkerChainDiamond01_01_Regular_Red_Loop_400x400.webm";
@@ -1970,38 +1914,64 @@ document.getElementById('saveBtn').addEventListener('click', () => {
   setTimeout(() => btn.style.background = original, 200);
 });
 
-/* Spellbook: collapsible categories + per-spell Show Text toggle (event delegation) */
-/* Spellbook: category collapse + read-only description modal (delegated) */
-document.addEventListener('click', (e) => {
+
+/* Spellbook: category collapse + read-only description modal (delegated, plain JS) */
+document.addEventListener('click', function(e) {
   // Collapse/expand category by tapping its header
-  const h3 = e.target.closest('.spell-section > h3');
-  if (h3) {
-    h3.parentElement.classList.toggle('collapsed');
+  var header = e.target && e.target.closest ? e.target.closest('h3') : null;
+  if (header && header.parentElement && header.parentElement.classList.contains('spell-section')) {
+    e.preventDefault();
+    e.stopPropagation();
+    var section = header.parentElement;
+    var nowCollapsed = section.classList.toggle('collapsed');
+    header.setAttribute('aria-expanded', String(!nowCollapsed));
     return;
   }
 
   // Open read-only description modal
-  const showBtn = e.target.closest('.spell-show-btn');
+  var showBtn = e.target && e.target.closest ? e.target.closest('.spell-show-btn') : null;
   if (showBtn) {
     e.preventDefault();
     e.stopPropagation();
-    e.stopImmediatePropagation();
 
-    const item = showBtn.closest('.spell-item');
+    var item = showBtn.closest('.spell-item');
     if (!item) return;
 
-    const title = item.dataset.spellName || 'Spell';
-    const body = item.dataset.description || 'No description available.';
+    var title = item.dataset.spellName || 'Spell';
+    var body  = item.dataset.description || 'No description available.';
 
-    const dlg = document.getElementById('spellTextDialog');
+    var dlg = document.getElementById('spellTextDialog');
     document.getElementById('spellTextTitle').textContent = title;
-    document.getElementById('spellTextBody').textContent = body;
+    document.getElementById('spellTextBody').textContent  = body;
 
-    // Open read-only dialog (works with your dialog fallback too)
-    try { dlg.showModal(); } catch { dlg.setAttribute('open',''); }
+    try { dlg.showModal(); } catch (err) { dlg.setAttribute('open',''); }
     return;
   }
 });
+
+// Close button for text dialog
+(function() {
+  var btn = document.getElementById('closeSpellTextBtn');
+  if (btn) {
+    btn.addEventListener('click', function() {
+      var dlg = document.getElementById('spellTextDialog');
+      try { dlg.close(); } catch (err) { dlg.removeAttribute('open'); }
+    });
+  }
+})();
+
+// Give headers button semantics once at startup (plain JS)
+(function initSpellHeaders(){
+  var headers = document.querySelectorAll('.spell-section > h3');
+  for (var i = 0; i < headers.length; i++) {
+    headers[i].setAttribute('role', 'button');
+    headers[i].setAttribute('tabindex', '0');
+    headers[i].setAttribute('aria-expanded', 'true');
+  }
+})();
+
+
+
 
 // Close button for text dialog
 document.getElementById('closeSpellTextBtn')?.addEventListener('click', () => {
@@ -2758,12 +2728,6 @@ document.getElementById('spellbookIndicator').addEventListener('click', () => {
   document.getElementById('spellbookPage').style.display = 'block';
 });
 
-// Collapsible spell sections
-document.querySelectorAll('.spell-section h3').forEach(header => {
-  header.addEventListener('click', () => {
-    header.parentElement.classList.toggle('collapsed');
-  });
-});
 
 // Back to inventory
 document.getElementById('backToInventoryBtn').addEventListener('click', () => {
@@ -3260,6 +3224,16 @@ if (editingSpellId) {
 });
 
 function createSpellElement(spellData, id) {
+// Prevent the "Show text" button from bubbling to the row's edit click
+element.addEventListener('click', function(ev) {
+  var t = ev.target;
+  if (t && t.closest && t.closest('.spell-show-btn')) {
+    ev.stopPropagation();
+  }
+}, true);
+
+
+
   const element = document.createElement('div');
   element.className = 'spell-item';
   element.dataset.id = id;
@@ -3270,25 +3244,25 @@ function createSpellElement(spellData, id) {
 }
 
 function updateSpellElement(element, spellData) {
-  const indicators = getSpellIndicators(spellData);
-  const school = (spellData.school || '').trim();
-  const levelLabel = spellData.level === 'cantrip' ? 'Cantrip' : `${spellData.level} lvl`;
-  const subtitle = school ? `${school} • ${levelLabel}` : levelLabel;
-  const description = (spellData.description || '').trim();
+  var indicators = getSpellIndicators(spellData);
+  var school = (spellData.school || '').trim();
+  var levelLabel = spellData.level === 'cantrip' ? 'Cantrip' : (spellData.level + ' lvl');
+  var subtitle = school ? (school + ' • ' + levelLabel) : levelLabel;
+  var description = (spellData.description || '').trim();
 
   // store full text for the modal
   element.dataset.description = description;
   element.dataset.spellName = spellData.name;
 
-  element.innerHTML = `
-    <div>
-      <div class="spell-name">${spellData.name}</div>
-      <div class="spell-school">${subtitle}</div>
-    </div>
-    <button type="button" class="spell-show-btn">Show text</button>
-    <div class="spell-indicators">${indicators}</div>
-  `;
+  element.innerHTML = ''
+    + '<div>'
+    +   '<div class="spell-name">' + spellData.name + '</div>'
+    +   '<div class="spell-school">' + subtitle + '</div>'
+    + '</div>'
+    + '<button type="button" class="spell-show-btn">Show text</button>'
+    + '<div class="spell-indicators">' + indicators + '</div>';
 }
+
 
 
 function getSpellIndicators(spellData) {
