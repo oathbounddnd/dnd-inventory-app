@@ -1154,9 +1154,8 @@ textarea{ min-height: 80px; resize: vertical; }
         <div class="slot-container">
           <button class="slot-nav slot-nav-left" data-nav-slot="amulet" style="display:none;">◀</button>
           <div class="slot" data-label="Amulet" data-slot="amulet"></div>
-          <button class="slot-nav slot-nav-right" data-nav-slot="amulet" style="display:none;">▶</button>
+        <button class="slot-nav slot-nav-right" data-nav-slot="amulet" style="display:none;">▶</button>
         </div>
-<div class="slot" data-label="Amulet"      data-slot="amulet"></div>
         </div>
         
 <div class="survival-column">
@@ -1624,13 +1623,21 @@ function saveAppData() {
         copper: document.getElementById('copper').value
       },
       
-      // Survival resources
+  // Survival resources
       survival: {
         waterLevel,
         rationsDays,
         rationsStock
       },
       
+      // Lock states
+      lockStates: (() => {
+        const locks = {};
+        document.querySelectorAll('.eq-drop[data-eq^="slot"]').forEach(zone => {
+          locks[zone.dataset.eq] = zone.classList.contains('locked');
+        });
+        return locks;
+      })(),
       // Spells
       spells: Array.from(spells.entries()).map(([id, spell]) => ({
         id,
@@ -1642,8 +1649,11 @@ function saveAppData() {
       portraitSrc: document.getElementById('charImg').src.startsWith('data:') ? 
                    document.getElementById('charImg').src : null,
       
-      // Quiver count
+// Quiver count
       quiverCount: parseInt(document.getElementById('quiverCount').textContent) || 0,
+      
+      // Carousel state
+      carouselState: Object.fromEntries(slotCarouselState),
       
       // Save timestamp
       savedAt: Date.now()
@@ -1707,6 +1717,23 @@ function loadAppData() {
       document.getElementById('silver').value = appData.coins.silver || 0;
       document.getElementById('copper').value = appData.coins.copper || 0;
     }
+
+// Restore lock states
+    if (appData.lockStates) {
+      Object.entries(appData.lockStates).forEach(([slotKey, isLocked]) => {
+        const zone = document.querySelector(`.eq-drop[data-eq="${slotKey}"]`);
+        const btn = document.querySelector(`button[data-lock-for="${slotKey}"]`);
+        if (zone && btn) {
+          if (isLocked) {
+            zone.classList.add('locked');
+            btn.textContent = '🔒';
+          } else {
+            zone.classList.remove('locked');
+            btn.textContent = '🔓';
+          }
+        }
+      });
+    }
     
     // Restore survival resources
     if (appData.survival) {
@@ -1747,7 +1774,7 @@ function loadAppData() {
         updateItemEl(el, itemData.data);
         wireItem(el);
         
-        const parent = document.querySelector(itemData.parentSelector);
+const parent = document.querySelector(itemData.parentSelector);
         if (parent) {
           parent.appendChild(el);
         } else {
@@ -1756,10 +1783,14 @@ function loadAppData() {
         }
         
         items.set(itemData.id, { el, data: itemData.data });
+        // Skip tryMergeInZone during load to maintain exact saved state
       });
+      
+      // Note: We intentionally DON'T call tryMergeInZone during load
+      // to preserve the exact saved state
     }
     
-    // Restore spells
+// Restore spells
     if (appData.spells) {
       appData.spells.forEach(spellData => {
         const element = createSpellElement(spellData.data, spellData.id);
@@ -1770,6 +1801,22 @@ function loadAppData() {
           spells.set(spellData.id, { data: spellData.data, element });
         }
       });
+    }
+    
+// Restore carousel state (validate indices are still valid)
+    if (appData.carouselState) {
+      Object.entries(appData.carouselState).forEach(([slot, index]) => {
+        const container = document.querySelector(`[data-nav-slot="${slot}"]`)?.closest('.slot-container');
+        if (container) {
+          const slotEl = container.querySelector('.slot');
+          const itemCount = slotEl?.querySelectorAll('.item').length || 0;
+          // Clamp index to valid range
+          const validIndex = Math.min(Math.max(0, index), Math.max(0, itemCount - 1));
+          slotCarouselState.set(slot, validIndex);
+        }
+      });
+      updateSlotCarousel('rings');
+      updateSlotCarousel('amulet');
     }
     
     // Update UI
@@ -1787,15 +1834,28 @@ function loadAppData() {
 function getElementSelector(element) {
   if (!element) return '';
   
+  // Priority 1: Use data attributes for specific identification
+  if (element.dataset.eq) return `[data-eq="${element.dataset.eq}"]`;
+  if (element.dataset.weapon) return `[data-weapon="${element.dataset.weapon}"]`;
+  if (element.dataset.slot) return `[data-slot="${element.dataset.slot}"]`;
+  
+  // Priority 2: Use ID if available
   if (element.id) return `#${element.id}`;
+  
+  // Priority 3: Combine class with data attribute for specificity
   if (element.className) {
     const classes = element.className.split(' ').filter(c => c);
-    if (classes.length > 0) return `.${classes.join('.')}`;
+    if (classes.length > 0) {
+      const classSelector = `.${classes.join('.')}`;
+      // Add data attribute to make it unique if available
+      if (element.dataset.eq) return `${classSelector}[data-eq="${element.dataset.eq}"]`;
+      if (element.dataset.weapon) return `${classSelector}[data-weapon="${element.dataset.weapon}"]`;
+      if (element.dataset.slot) return `${classSelector}[data-slot="${element.dataset.slot}"]`;
+      return classSelector;
+    }
   }
-  if (element.dataset.eq) return `[data-eq="${element.dataset.eq}"]`;
-  if (element.dataset.slot) return `[data-slot="${element.dataset.slot}"]`;
-  if (element.dataset.weapon) return `[data-weapon="${element.dataset.weapon}"]`;
   
+  // Fallback
   return element.tagName.toLowerCase();
 }
 
@@ -1917,9 +1977,10 @@ portrait.addEventListener('click', () => fileInput.click());
 function handleImageFile(file) {
   if (!file || !file.type.startsWith('image/')) return;
   
-  // Check file size (limit to 1MB to prevent localStorage issues)
-  if (file.size > 1024 * 1024) {
-    alert('Image too large. Please use an image under 1MB.');
+  // Check file size (limit to 750KB since base64 encoding increases size by ~33%)
+  // 750KB * 1.33 = ~1MB encoded
+  if (file.size > 750 * 1024) {
+    alert('Image too large. Please use an image under 750KB.');
     return;
   }
   
@@ -2009,9 +2070,13 @@ document.getElementById('saveBtn').addEventListener('click', () => {
   forceSave();
   // Visual feedback
   const btn = document.getElementById('saveBtn');
-  const original = btn.style.background;
+  const original = btn.textContent;
+  btn.textContent = '✓';
   btn.style.background = '#4caf50';
-  setTimeout(() => btn.style.background = original, 200);
+  setTimeout(() => {
+    btn.textContent = original;
+    btn.style.background = '';
+  }, 1000);
 });
 
 
@@ -2663,11 +2728,9 @@ function findFirstDropTarget(data){
 
 /* Slot locks: Slots 1–4 with persistent state */
 function saveLockState() {
-  const lockStates = {};
-  document.querySelectorAll('.eq-drop[data-eq^="slot"]').forEach(zone => {
-    lockStates[zone.dataset.eq] = zone.classList.contains('locked');
-  });
-  localStorage.setItem('dnd_lock_states', JSON.stringify(lockStates));
+  // This now does nothing - lock state is saved in main saveAppData()
+  // Keeping function for backwards compatibility with existing event listeners
+  scheduleSave();
 }
 
 function loadLockState() {
